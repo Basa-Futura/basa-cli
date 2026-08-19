@@ -2,14 +2,12 @@
 
 ## Reporting a vulnerability
 
-> **TODO before this repository is made public:** replace the address below. Options are a shared alias
-> (`security@…`), GitHub's private vulnerability reporting (Settings → Security → enable), or a named
-> individual. Publishing a personal address invites spam, so this is a deliberate decision rather than
-> a blank to fill in casually. Tracked as finding 2 in [AUDIT.md](AUDIT.md).
-
 Please **do not** open a public issue for a security problem.
 
-Report it privately to `SECURITY-CONTACT-TBD` and expect an acknowledgement within two working days.
+Email **security@basafutura.com** and expect an acknowledgement within two working days.
+
+A shared alias is used deliberately rather than an individual's address: it survives staff changes, and
+it keeps one person's inbox off a public page.
 
 ## Scope
 

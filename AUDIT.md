@@ -4,9 +4,9 @@
 **Commit audited:** `feat/slice-2b-contracts` @ 150f78f, plus the fixes this document prompted
 **Question:** is this repository safe to make public, and is it as thin as claimed?
 
-**Answer: yes, once a security-reporting address is chosen.** Two of the three original blockers are
-resolved — the licence is decided (proprietary, all rights reserved) and the two commit messages naming
-an employee have been rewritten. Everything else checked out, and one claim I had made was wrong.
+**Answer: yes.** All three original blockers are resolved — the licence is decided (proprietary, all
+rights reserved), the security contact is set, and every reference to a named colleague is gone from
+files, messages, and history. Two claims I had made were wrong and are corrected below.
 
 Re-run every check in this document with the commands quoted; nothing here is asserted without one.
 
@@ -141,31 +141,32 @@ may download and run the compiled program for that purpose. Without that carve-o
 operators would be running an unlicensed binary — technically absurd, but worth not writing down. It
 also states that relicensing later, including as open source, remains open.
 
-### 2. Security-reporting address — **still blocking**
+### 2. Security-reporting address — **resolved**
 
 A public repository needs a stated route for reporting a vulnerability, or reports arrive as public
-issues. Added, but with the contact address left as a marked placeholder — publishing an individual's
-address invites spam, and choosing between a personal address, an alias, and GitHub private advisories
-is not mine to make. **Needs an address before publishing.**
+issues. `SECURITY.md` directs them to **security@basafutura.com** — a shared alias rather than an
+individual, so it survives staff changes and keeps a personal inbox off a public page.
 
 ### 3. A real employee is named in two commit messages — **resolved: history rewritten**
 
-`git log` contains "The first real operational command" and "the operator's 'what is awaiting signature'". Publishing
-puts a real first name, tied to a job function and to internal staffing, into permanent public history.
+Two commit messages named a colleague by first name and tied them to a job function, which would have
+put internal staffing into permanent public history. Three PR bodies did the same.
+
+Both messages now describe the role instead. PR bodies were edited directly. Test fixtures that used the
+same first name as a sample user are now an invented one, matching the other synthetic names already
+there.
+
+**A correction about how this was found.** The first pass of this audit reported that no tracked file
+named an employee. That was wrong: `git grep -E` with a `\b` word boundary silently matches nothing on
+this platform, so the check returned zero while three files actually contained the name. Fixed-string
+matching found them:
 
 ```
-git log --format='%s%n%b' | grep -in 'the operator'
+git grep -Fin -e "<name>" -- .    # not: git grep -inE '\b<name>\b'
 ```
 
-No tracked *file* names any employee; the code comments say "a COO". Three PR bodies did, and those
-are **fixed** — PR bodies are editable. Commit messages are not, short of a history rewrite.
-
-Rewritten. Both messages now describe the role, not the person. The rewrite was cheap because nothing
-had merged and only one person had pushed; it would not have been afterwards, since published history
-is not editable in place.
-
-`feat/slice-1b-auth-and-me` was unaffected — the name first appears in the commit after it, so that
-branch's SHAs are unchanged.
+The lesson generalises past this finding: a verification command that can fail silently is worse than no
+check, because it produces false confidence. Every sweep in this document now uses `-F`.
 
 ### 4. Server-side policy was duplicated in the client — **fixed**
 
