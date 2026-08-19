@@ -269,5 +269,9 @@ what stops domain logic leaking into a Go binary that has no business holding an
 
 ## Licence
 
-Uses [`github.com/basecamp/cli`](https://github.com/basecamp/cli) for credential storage —
-MIT, Copyright 2025 37signals LLC.
+**Proprietary — source-visible, not open source.** Copyright (c) 2026 Basa Futura, all rights reserved.
+Published so the people who run it can read and verify it, and so it can be installed without
+authenticating to a private repository. See [LICENSE](LICENSE).
+
+Third-party components are used under their own permissive licences (MIT, Apache-2.0, BSD) — none of
+which requires this software to be open source. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

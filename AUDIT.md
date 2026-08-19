@@ -4,8 +4,9 @@
 **Commit audited:** `feat/slice-2b-contracts` @ 150f78f, plus the fixes this document prompted
 **Question:** is this repository safe to make public, and is it as thin as claimed?
 
-**Answer: yes, after three items are settled** — a licence, a security-reporting address, and a
-decision about two commit messages. Everything else checked out, and one claim I had made was wrong.
+**Answer: yes, once a security-reporting address is chosen.** Two of the three original blockers are
+resolved — the licence is decided (proprietary, all rights reserved) and the two commit messages naming
+an employee have been rewritten. Everything else checked out, and one claim I had made was wrong.
 
 Re-run every check in this document with the commands quoted; nothing here is asserted without one.
 
@@ -124,24 +125,30 @@ installer has the same property. Documented in `docs/INSTALL.md` rather than lef
 
 ## Findings
 
-### 1. No `LICENSE` file — **blocking**
+### 1. No `LICENSE` file — **resolved: proprietary, all rights reserved**
 
-A public repository with no licence is "all rights reserved" by default: nobody, including future Basa
-staff or contractors, has clear rights to use or contribute. It also sits oddly against depending on
-MIT-licensed code.
+Decided deliberately rather than by default. **No permissive dependency obliges this software to be
+open source** — MIT, Apache-2.0 and BSD are permissive, not copyleft, and say nothing about how the
+work that links them is licensed. Only GPL-family licences do that, and none is present.
 
-Not fixed here, because the licence is a business decision rather than a technical one. MIT would
-match the Basecamp CLIs this is modelled on and is the usual choice for a tool like this.
-**Needs a decision before publishing.**
+The one real obligation is attribution: MIT and BSD require their notices to travel with "copies or
+substantial portions", and a compiled Go binary contains that code. Satisfied by
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), which also records that Cobra ships no `NOTICE` file,
+so Apache-2.0 §4(d) has nothing to propagate.
 
-### 2. No `SECURITY.md` — **blocking**
+`LICENSE` reserves all rights, with one narrow carve-out: a person authorized to access a Basa account
+may download and run the compiled program for that purpose. Without that carve-out the intended
+operators would be running an unlicensed binary — technically absurd, but worth not writing down. It
+also states that relicensing later, including as open source, remains open.
+
+### 2. Security-reporting address — **still blocking**
 
 A public repository needs a stated route for reporting a vulnerability, or reports arrive as public
 issues. Added, but with the contact address left as a marked placeholder — publishing an individual's
 address invites spam, and choosing between a personal address, an alias, and GitHub private advisories
 is not mine to make. **Needs an address before publishing.**
 
-### 3. A real employee is named in two commit messages — **needs a decision**
+### 3. A real employee is named in two commit messages — **resolved: history rewritten**
 
 `git log` contains "The first real operational command" and "the operator's 'what is awaiting signature'". Publishing
 puts a real first name, tied to a job function and to internal staffing, into permanent public history.
@@ -153,9 +160,12 @@ git log --format='%s%n%b' | grep -in 'the operator'
 No tracked *file* names any employee; the code comments say "a COO". Three PR bodies did, and those
 are **fixed** — PR bodies are editable. Commit messages are not, short of a history rewrite.
 
-A rewrite is cheap right now: three branches, none merged, only I have pushed to them. It stops being
-cheap the moment anything merges. **Recommend rewriting the two messages before publishing** — say the
-word and I will.
+Rewritten. Both messages now describe the role, not the person. The rewrite was cheap because nothing
+had merged and only one person had pushed; it would not have been afterwards, since published history
+is not editable in place.
+
+`feat/slice-1b-auth-and-me` was unaffected — the name first appears in the commit after it, so that
+branch's SHAs are unchanged.
 
 ### 4. Server-side policy was duplicated in the client — **fixed**
 
