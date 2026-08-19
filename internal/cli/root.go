@@ -83,6 +83,7 @@ assumes production is one typo away from trouble.`,
 		commands.NewAuthCmd(deps),
 		commands.NewMeCmd(deps),
 		commands.NewDealsCmd(deps),
+		commands.NewContractsCmd(deps),
 		newVersionCmd(stdout),
 	)
 

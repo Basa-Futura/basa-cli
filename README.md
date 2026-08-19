@@ -79,6 +79,8 @@ Run `basa` on its own at any time to see the available commands.
 |---|---|
 | `basa deals list` | What is outstanding right now |
 | `basa deals show <id>` | Where one deal stands |
+| `basa contracts list` | What is awaiting signature |
+| `basa contracts show <id>` | Where one contract stands |
 | `basa me` | Who am I, what teams can I see, when does my token expire |
 | `basa auth login` | Store a token for an environment |
 | `basa auth status` | Same as `me`, phrased as a health check |
@@ -142,6 +144,32 @@ basa deals show EfhxL -e staging
 ```
 
 If more deals match than are shown, it says so — a partial list is never left looking complete.
+
+### Contracts
+
+"What is awaiting signature" is `--status ready_for_signature`.
+
+```
+$ basa contracts list -e staging --status ready_for_signature
+staging · Acme Agency
+ID     STATUS               NAME                       RECIPIENT   DEAL   UPDATED
+EfhxL  Ready for Signature  Spring Campaign agreement  Sam Rivera  VqXmZ  2026-08-19
+```
+
+| Flag | Effect |
+|---|---|
+| `--status` | `draft`, `ready_for_signature`, `signed`, `declined`, `voided` |
+| `--limit`, `-n` | How many to show, 1–100 (default 25) |
+
+A contract in the **DEAL** column reading `standalone` is not missing data — it is a contract created
+without a deal attached, which is a normal shape.
+
+### A note on ids
+
+Ids are short strings like `EfhxL`. **The same string can be a valid id for more than one kind of
+thing** — a deal and a contract can share one. That is fine as long as you use it with the command it
+came from: `basa contracts show EfhxL` and `basa deals show EfhxL` are both valid and will show you
+different things. If you get an unexpected result, check you are using the right command for the id.
 
 ---
 
