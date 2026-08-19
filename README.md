@@ -34,16 +34,23 @@ Until that happens, every command will tell you access is not enabled.
 
 ### 2. Install it
 
-**Not yet available as a download.** Where the binary gets hosted is still an open decision, so for
-now it is built from source, which needs Go. See [docs/INSTALL.md](docs/INSTALL.md) for the full
-picture and why.
+Paste this into Terminal:
 
 ```bash
-git clone https://github.com/Basa-Futura/basa-cli.git
-cd basa-cli
-make install          # builds and copies to ~/.local/bin/basa
+curl -fsSL https://raw.githubusercontent.com/Basa-Futura/basa-cli/main/scripts/install.sh | bash
+```
+
+It works out your platform, verifies the download against the published checksums, and installs to
+`~/.local/bin/basa`. If that is not on your `PATH` it tells you the one line to add.
+
+```bash
 basa version          # check it worked
 ```
+
+> **This needs the repository to be public and to have a published release** — the installer
+> authenticates with nothing, which is what makes it one line. Neither is true yet, so today the
+> installer fails with a clear message and you build from source instead. See
+> [docs/INSTALL.md](docs/INSTALL.md) for both paths and the reasoning.
 
 ### 3. Get a token
 
