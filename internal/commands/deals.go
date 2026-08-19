@@ -1,0 +1,326 @@
+package commands
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"strconv"
+	"strings"
+
+	"github.com/spf13/cobra"
+
+	"github.com/Basa-Futura/basa-cli/internal/client"
+	"github.com/Basa-Futura/basa-cli/internal/fail"
+	"github.com/Basa-Futura/basa-cli/internal/output"
+)
+
+// NewDealsCmd builds the `basa deals` group.
+func NewDealsCmd(deps *Deps) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "deals",
+		Aliases: []string{"deal"},
+		Short:   "List and show deals",
+		Long: `List and show deals.
+
+A deal is one creator on one campaign. "Outstanding" usually means filtering by
+stage — outreach, negotiation, contracting, or execution.`,
+		Example: `  basa deals list --env staging
+  basa deals list --env staging --stage contracting
+  basa deals show K3mQz --env staging`,
+	}
+
+	cmd.AddCommand(newDealsListCmd(deps), newDealsShowCmd(deps))
+
+	return cmd
+}
+
+func newDealsListCmd(deps *Deps) *cobra.Command {
+	var (
+		stage   string
+		project string
+		limit   int
+	)
+
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List the team's deals",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runDealsList(cmd.Context(), deps, client.DealFilters{
+				Stage:   stage,
+				Project: project,
+				Limit:   limit,
+			})
+		},
+	}
+
+	cmd.Flags().StringVar(&stage, "stage", "", "Only this stage (outreach, negotiation, contracting, execution)")
+	cmd.Flags().StringVar(&project, "project", "", "Only this project (a project id)")
+	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "How many to show (1-100, default 25)")
+
+	return cmd
+}
+
+func runDealsList(ctx context.Context, deps *Deps, filters client.DealFilters) error {
+	c, env, err := clientFor(deps)
+	if err != nil {
+		return err
+	}
+
+	team, err := resolveTeam(ctx, deps, c)
+	if err != nil {
+		return err
+	}
+
+	if deps.Out.JSON {
+		raw, err := c.DealsRaw(ctx, team.ID, filters)
+		if err != nil {
+			return err
+		}
+		return deps.Out.Data(raw, nil)
+	}
+
+	page, err := c.Deals(ctx, team.ID, filters)
+	if err != nil {
+		return err
+	}
+
+	// The operator should always know which system and which team they are
+	// looking at, and that belongs on stderr so it cannot corrupt a pipeline.
+	deps.Out.Notice("%s · %s", env, team.Name)
+
+	if len(page.Deals) == 0 {
+		deps.Out.Notice("No deals matched.")
+
+		return nil
+	}
+
+	rows := make([][]string, 0, len(page.Deals))
+	for _, deal := range page.Deals {
+		rows = append(rows, []string{
+			deal.ID,
+			dealStage(deal),
+			dealProject(deal),
+			dealBrand(deal),
+			dealCounterparty(deal),
+			shortDate(deal.UpdatedAt),
+		})
+	}
+
+	if err := deps.Out.Data(nil, func(io.Writer) error {
+		return deps.Out.Table(output.Table{
+			Headers: []string{"ID", "STAGE", "PROJECT", "BRAND", "COUNTERPARTY", "UPDATED"},
+			Rows:    rows,
+		})
+	}); err != nil {
+		return err
+	}
+
+	// Say so when there is more than they are seeing. Silently truncating a
+	// list reads as "this is everything", which for a status report is worse
+	// than showing nothing.
+	if page.Meta.Total > len(page.Deals) {
+		deps.Out.Notice("Showing %d of %d. Use --limit to see more.", len(page.Deals), page.Meta.Total)
+	}
+
+	return nil
+}
+
+func newDealsShowCmd(deps *Deps) *cobra.Command {
+	return &cobra.Command{
+		Use:   "show <id>",
+		Short: "Show one deal",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return fail.UsageHint("Which deal?", "Pass its id: basa deals show <id> --env <name>")
+			}
+
+			return runDealsShow(cmd.Context(), deps, args[0])
+		},
+	}
+}
+
+func runDealsShow(ctx context.Context, deps *Deps, id string) error {
+	c, env, err := clientFor(deps)
+	if err != nil {
+		return err
+	}
+
+	team, err := resolveTeam(ctx, deps, c)
+	if err != nil {
+		return err
+	}
+
+	if deps.Out.JSON {
+		raw, err := c.DealRaw(ctx, team.ID, id)
+		if err != nil {
+			return err
+		}
+		return deps.Out.Data(raw, nil)
+	}
+
+	deal, err := c.Deal(ctx, team.ID, id)
+	if err != nil {
+		return err
+	}
+
+	return deps.Out.Data(nil, func(io.Writer) error {
+		return deps.Out.Record(output.Record{Fields: []output.Field{
+			{Key: "Environment", Value: env},
+			{Key: "Team", Value: team.Name},
+			{Key: "Deal", Value: deal.ID},
+			{Key: "Stage", Value: dealStage(*deal)},
+			{Key: "Project", Value: dealProject(*deal)},
+			{Key: "Brand", Value: dealBrand(*deal)},
+			{Key: "Role", Value: valueOr(deal.Role != nil, func() string { return deal.Role.Name })},
+			{Key: "Counterparty", Value: dealCounterparty(*deal)},
+			{Key: "Assigned to", Value: derefOr(deal.AssignedTo, "nobody")},
+			{Key: "Sent", Value: shortDate(deal.SentAt)},
+			{Key: "Updated", Value: shortDate(deal.UpdatedAt)},
+		}})
+	})
+}
+
+// --- team resolution -------------------------------------------------------
+
+// resolveTeam turns --team into a team, and refuses to guess when it is absent
+// and the caller belongs to more than one.
+//
+// A single team IS resolved implicitly here, unlike --env. The difference is
+// consequence: picking the wrong environment can mean reading or eventually
+// writing the wrong system, whereas picking the wrong team just shows the wrong
+// list, and the team name is printed on every result so a mistake is visible.
+func resolveTeam(ctx context.Context, deps *Deps, c *client.Client) (client.Team, error) {
+	me, err := c.Me(ctx)
+	if err != nil {
+		return client.Team{}, err
+	}
+
+	if len(me.Teams) == 0 {
+		return client.Team{}, fail.UsageHint(
+			"Your account is not a member of any team.",
+			"Ask a Basa administrator to add you to one.",
+		)
+	}
+
+	if deps.TeamFlag == "" {
+		if len(me.Teams) == 1 {
+			return me.Teams[0], nil
+		}
+
+		return client.Team{}, fail.UsageHint(
+			"You belong to more than one team, so basa cannot tell which you mean.",
+			"Pass --team with one of: "+teamNames(me.Teams),
+		)
+	}
+
+	matches := matchTeams(me.Teams, deps.TeamFlag)
+
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		return client.Team{}, fail.UsageHint(
+			fmt.Sprintf("No team of yours matches %q.", deps.TeamFlag),
+			"Your teams: "+teamNames(me.Teams),
+		)
+	default:
+		return client.Team{}, fail.UsageHint(
+			fmt.Sprintf("%q matches more than one of your teams.", deps.TeamFlag),
+			"Be more specific: "+teamNames(matches),
+		)
+	}
+}
+
+// matchTeams accepts an exact id, then an exact name, then a unique substring —
+// so an operator can type a memorable fragment instead of an integer, but a
+// fragment that could mean two teams is an error rather than a coin flip.
+func matchTeams(teams []client.Team, want string) []client.Team {
+	if id, err := strconv.ParseInt(want, 10, 64); err == nil {
+		for _, t := range teams {
+			if t.ID == id {
+				return []client.Team{t}
+			}
+		}
+	}
+
+	needle := strings.ToLower(strings.TrimSpace(want))
+
+	for _, t := range teams {
+		if strings.ToLower(t.Name) == needle {
+			return []client.Team{t}
+		}
+	}
+
+	var partial []client.Team
+	for _, t := range teams {
+		if strings.Contains(strings.ToLower(t.Name), needle) {
+			partial = append(partial, t)
+		}
+	}
+
+	return partial
+}
+
+func teamNames(teams []client.Team) string {
+	names := make([]string, 0, len(teams))
+	for _, t := range teams {
+		names = append(names, fmt.Sprintf("%s (%d)", t.Name, t.ID))
+	}
+	return strings.Join(names, ", ")
+}
+
+// --- formatting ------------------------------------------------------------
+
+func dealStage(d client.Deal) string {
+	if d.Stage == nil {
+		return "—"
+	}
+	return d.Stage.Label
+}
+
+func dealProject(d client.Deal) string {
+	if d.Project == nil {
+		return "—"
+	}
+	return d.Project.Name
+}
+
+func dealBrand(d client.Deal) string {
+	if d.Brand == nil {
+		return "—"
+	}
+	return d.Brand.Name
+}
+
+func dealCounterparty(d client.Deal) string {
+	if d.Counterparty == nil {
+		return "—"
+	}
+	return d.Counterparty.Name
+}
+
+// shortDate trims an ISO-8601 timestamp to the date. A COO scanning a list
+// wants the day, not the second.
+func shortDate(iso *string) string {
+	if iso == nil || *iso == "" {
+		return "—"
+	}
+	if len(*iso) >= 10 {
+		return (*iso)[:10]
+	}
+	return *iso
+}
+
+func derefOr(s *string, fallback string) string {
+	if s == nil || *s == "" {
+		return fallback
+	}
+	return *s
+}
+
+func valueOr(ok bool, get func() string) string {
+	if !ok {
+		return "—"
+	}
+	return get()
+}

@@ -12,13 +12,53 @@ notice.
 
 | Command | What it does |
 |---|---|
+| `basa deals list` | What is outstanding right now |
+| `basa deals show <id>` | Where one deal stands |
 | `basa auth login` | Store a Basa API token for an environment |
 | `basa auth status` | Show who you are, and check your token still works |
 | `basa auth logout` | Remove the stored token from this machine |
 | `basa me` | Show your account, your teams, and your current token |
 | `basa version` | Print the version |
 
-That is the whole surface. Reading deals, contracts, and projects comes next.
+That is the whole surface. Contracts and projects come next.
+
+### Deals
+
+```
+$ basa deals list --env staging
+staging · Acme Agency
+ID     STAGE        PROJECT          BRAND      COUNTERPARTY  UPDATED
+EfhxL  Contracting  Spring Campaign  Northwind  Sam Rivera    2026-08-19
+gbHJd  Outreach     Spring Campaign  Northwind  Jordan Lee    2026-08-19
+```
+
+| Flag | Effect |
+|---|---|
+| `--stage` | `outreach`, `negotiation`, `contracting`, `execution` |
+| `--project` | Only this project (a project id) |
+| `--limit/-n` | How many to show, 1–100 (default 25) |
+
+```bash
+basa deals list --env staging --stage contracting
+basa deals show EfhxL --env staging
+```
+
+The environment and team are printed above the table, on stderr, so you always
+know which system you are looking at and a pipeline never sees it. If more deals
+match than are shown, it says so rather than letting a partial list look
+complete.
+
+### Which team?
+
+If you belong to one team, `basa` uses it. If you belong to several, pass
+`--team` — by name, a unique part of the name, or its id:
+
+```bash
+basa deals list --env staging --team "Acme Agency"
+basa deals list --env staging --team acme          # a unique fragment is enough
+```
+
+A fragment matching two of your teams is an error, not a coin flip.
 
 ## What it deliberately cannot do
 

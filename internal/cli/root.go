@@ -28,8 +28,9 @@ var (
 // exit-code and stderr concerns.
 func Run(args []string, stdout, stderr io.Writer) int {
 	var (
-		asJSON  bool
-		envFlag string
+		asJSON   bool
+		envFlag  string
+		teamFlag string
 	)
 
 	cfg, err := config.Load()
@@ -68,17 +69,20 @@ assumes production is one typo away from trouble.`,
 
 	root.PersistentFlags().BoolVar(&asJSON, "json", false, "Output JSON instead of a table")
 	root.PersistentFlags().StringVarP(&envFlag, "env", "e", "", "Which Basa environment to talk to (required)")
+	root.PersistentFlags().StringVarP(&teamFlag, "team", "t", "", "Which team, by name or id (needed if you belong to several)")
 
 	// Flags are parsed before any RunE fires, so fold them into the shared deps
 	// at that point rather than threading them through every constructor.
 	root.PersistentPreRun = func(_ *cobra.Command, _ []string) {
 		out.JSON = asJSON
 		deps.EnvFlag = envFlag
+		deps.TeamFlag = teamFlag
 	}
 
 	root.AddCommand(
 		commands.NewAuthCmd(deps),
 		commands.NewMeCmd(deps),
+		commands.NewDealsCmd(deps),
 		newVersionCmd(stdout),
 	)
 
