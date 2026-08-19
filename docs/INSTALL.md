@@ -53,7 +53,7 @@ short token lifetime elsewhere in this design exists to avoid.
 than for the application repository:
 
 - It contains no business logic, no domain code, no credentials, and no customer data. It is a thin
-  HTTP client: 1,803 lines of Go excluding tests, audited against that claim (see AUDIT.md).
+  HTTP client — under 2,000 lines of Go excluding tests, audited against that claim (see AUDIT.md).
 - The only thing it reveals is the shape of an internal API — which requires a valid token *and* the
   `feature-api-tokens` flag on the account before it returns anything at all.
 - This is the normal arrangement. Basecamp, HEY, and Fizzy all ship public CLIs against authenticated,

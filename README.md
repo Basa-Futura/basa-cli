@@ -206,8 +206,9 @@ person.
 
 ## Sessions and security
 
-**Sessions last 8 hours**, so you will log in roughly twice a day. That is deliberate — the token
-sits on your laptop, and a short-lived one limits the damage if the laptop goes missing.
+**Sessions are short — currently 8 hours**, so you will log in roughly twice a day. That is deliberate:
+the token sits on your laptop, and a short life limits the damage if the laptop goes missing. The exact
+length is set by the server and can change, so `basa auth status` is the authority, not this page.
 
 `basa auth logout` removes the copy on your machine. It does **not** revoke the token on the server.
 If you think a token has been exposed, delete it in Basa under **API Tokens**. If the whole account

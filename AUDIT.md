@@ -13,14 +13,20 @@ Re-run every check in this document with the commands quoted; nothing here is as
 
 ## Corrections to earlier claims
 
-**I said this was "about 1,100 lines". It is 1,803 lines of Go excluding tests.** The 1,100 figure was
-accurate when the CLI had auth and `me` only, and I repeated it after deals and contracts had landed
-without re-measuring. Corrected in `docs/INSTALL.md`.
+**I said this was "about 1,100 lines". It is a little over 1,800 lines of Go excluding tests.** The
+1,100 figure was accurate when the CLI had auth and `me` only, and I repeated it after deals and
+contracts had landed without re-measuring.
+
+The docs now say "under 2,000 lines" rather than an exact count. Re-verifying this audit immediately
+caught the same failure a second time — my own fix to finding 4 added five lines and made a freshly
+written exact figure wrong. A number that goes stale on every commit should not be quoted as a fact.
 
 ```
-git ls-files '*.go' | grep -v _test.go | xargs wc -l   # 1803
-git ls-files '*_test.go'               | xargs wc -l   # 1250
+git ls-files '*.go' | grep -v _test.go | xargs wc -l   # non-test Go
+git ls-files '*_test.go'               | xargs wc -l   # tests
 ```
+
+Run it rather than trusting a figure quoted here — that is the whole lesson of this correction.
 
 **I said "no business logic" without having checked for server-policy duplication.** One instance
 existed — see finding 4. Fixed.
@@ -158,9 +164,14 @@ token expiry. That is a server setting (`SANCTUM_TOKEN_EXPIRATION_MINUTES`) rest
 constant: change it on the server and the CLI would confidently tell operators something false about
 how long their credential lives.
 
-This was the only genuine violation of the thinness claim, and the one place the client could actively
-mislead about security posture. It now says "when the server's session limit is reached" — which is
-true regardless of the setting.
+This was the only such violation in the *code*, and the one place the client could actively mislead
+about security posture. It now says "when the server's session limit is reached" — true regardless of
+the setting.
+
+Re-verification found the same duplication surviving in `README.md`, which stated "Sessions last 8
+hours" as flat fact. Softened to name it as a server setting that can change. Operator documentation is
+a more defensible place for a concrete number than a compiled constant — "roughly twice a day" is
+genuinely useful — but it should not read as a property of the tool.
 
 ### 5. Internal vocabulary becomes public — **accepted, with one change**
 
