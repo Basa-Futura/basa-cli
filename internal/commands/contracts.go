@@ -179,8 +179,8 @@ func contractStatusLabel(c client.Contract) string {
 }
 
 // contractDealID reports "standalone" rather than an em dash when there is no
-// deal, because that is a meaningful shape (the Quick Deals contract) and not
-// missing data.
+// deal. A contract without one is a normal, meaningful shape, and a dash would
+// read as missing data.
 func contractDealID(c client.Contract) string {
 	if c.Deal == nil {
 		return "standalone"

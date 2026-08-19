@@ -61,8 +61,8 @@ func TestContractsListRendersATable(t *testing.T) {
 	}
 }
 
-// A contract with no deal is the Quick Deals shape — a real, meaningful state,
-// not missing data. It must read as such rather than as a blank cell.
+// A contract with no deal is a real, meaningful state, not missing data. It
+// must read as such rather than as a blank cell.
 func TestAStandaloneContractIsLabelledNotBlank(t *testing.T) {
 	h := newHarness(t, contractsAPI(meWith("Acme Agency"), contractsBody, nil))
 	t.Setenv(config.EnvVarToken, "42|token")

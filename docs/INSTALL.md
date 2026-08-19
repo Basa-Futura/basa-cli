@@ -53,7 +53,7 @@ short token lifetime elsewhere in this design exists to avoid.
 than for the application repository:
 
 - It contains no business logic, no domain code, no credentials, and no customer data. It is a thin
-  HTTP client, about 1,100 lines.
+  HTTP client: 1,803 lines of Go excluding tests, audited against that claim (see AUDIT.md).
 - The only thing it reveals is the shape of an internal API — which requires a valid token *and* the
   `feature-api-tokens` flag on the account before it returns anything at all.
 - This is the normal arrangement. Basecamp, HEY, and Fizzy all ship public CLIs against authenticated,
@@ -74,6 +74,12 @@ git push origin v0.1.0
 `.github/workflows/release.yml` runs `make check`, cross-compiles for macOS and Linux on arm64 and
 amd64, and attaches the binaries plus `checksums.txt` to the GitHub release. The installer reads that
 release. Asset names in the workflow and in `scripts/install.sh` have to stay in step.
+
+**Limit of the checksum check.** `checksums.txt` is published in the same release as the binary, so it
+proves the download was not corrupted or altered in transit — not that the release itself is genuine.
+Anyone who could publish a release could publish matching checksums. Closing that would need signed
+releases (cosign or minisign) and a pinned public key in the installer. The Basecamp CLI installer has
+the same property; noting it so nobody mistakes the check for more than it is.
 
 A tag never ships without passing its own tests — `make check` runs first and fails the release.
 
