@@ -87,9 +87,10 @@ Run `basa` on its own at any time to see the available commands.
 
 ### Which environment — always required
 
-**Every command needs `--env` (or `-e`). There is no default, on purpose.** A tool that quietly
-assumes production is one typo away from trouble, so `basa` would rather ask than guess — even when
-only one environment is configured.
+**Every command that talks to Basa needs `--env` (or `-e`). There is no default, on purpose.** A
+tool that quietly assumes production is one typo away from trouble, so `basa` would rather ask than
+guess — even when only one environment is configured. `basa version` and `basa --help` are the
+exceptions: they never reach a server, so they never ask which one.
 
 ```bash
 basa deals list --env staging

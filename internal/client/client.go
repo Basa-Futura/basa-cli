@@ -132,7 +132,11 @@ func (f DealFilters) query() url.Values {
 	if f.Project != "" {
 		q.Set("project", f.Project)
 	}
-	if f.Limit > 0 {
+	// != 0 rather than > 0: the flag's zero value means "unset, let the server
+	// choose", but a negative value is the operator asking for something
+	// invalid, and the server's own 1-100 message is the right answer to that.
+	// Dropping it here returned a default page and looked like success.
+	if f.Limit != 0 {
 		q.Set("per_page", strconv.Itoa(f.Limit))
 	}
 	return q

@@ -44,6 +44,7 @@ func newDealsListCmd(deps *Deps) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List the team's deals",
+		Args:  rejectStrayArgs("deals list", "deals show <id>"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runDealsList(cmd.Context(), deps, client.DealFilters{
 				Stage:   stage,
@@ -129,6 +130,9 @@ func newDealsShowCmd(deps *Deps) *cobra.Command {
 	return &cobra.Command{
 		Use:   "show <id>",
 		Short: "Show one deal",
+		// At most one, rather than exactly one, so a bare `deals show` still
+		// gets the question below instead of Cobra's wording.
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return fail.UsageHint("Which deal?", "Pass its id: basa deals show <id> --env <name>")
@@ -189,6 +193,26 @@ func runDealsShow(ctx context.Context, deps *Deps, id string) error {
 // consequence: picking the wrong environment can mean reading or eventually
 // writing the wrong system, whereas picking the wrong team just shows the wrong
 // list, and the team name is printed on every result so a mistake is visible.
+// rejectStrayArgs refuses positional arguments on a command that takes none.
+// cobra.NoArgs would also reject them, but its message ("accepts 0 arg(s),
+// received 1") is not the voice the rest of this CLI speaks, and the likely
+// cause is reaching for the sibling command — so the error names it.
+//
+// Without this, `basa deals list <id>` listed everything and exited 0, which
+// reads as "that id matched all of these".
+func rejectStrayArgs(command, instead string) cobra.PositionalArgs {
+	return func(_ *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return nil
+		}
+
+		return fail.UsageHintf(
+			"Did you mean: basa "+instead,
+			"basa %s takes no arguments, but got %q.", command, args[0],
+		)
+	}
+}
+
 func resolveTeam(ctx context.Context, deps *Deps, c *client.Client) (client.Team, error) {
 	me, err := c.Me(ctx)
 	if err != nil {

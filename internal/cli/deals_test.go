@@ -84,8 +84,88 @@ func TestDealsListNamesTheEnvironmentAndTeamOnStderr(t *testing.T) {
 	if !strings.Contains(stderr, "local") || !strings.Contains(stderr, "Acme Agency") {
 		t.Errorf("stderr should name the environment and team, got:\n%s", stderr)
 	}
-	if strings.Contains(stdout, "Acme Agency ") && !strings.Contains(stdout, "Acme") {
+	// The whole context line, not a fragment. Asserting on "Acme" alone would
+	// also match the table's own cells; an earlier version of this check ANDed
+	// two predicates that cannot both hold ("contains Acme Agency" implies
+	// "contains Acme"), so it could never fail and guarded nothing.
+	if strings.Contains(stdout, "local \u00b7 Acme Agency") {
 		t.Errorf("the context line must not be on stdout:\n%s", stdout)
+	}
+}
+
+// A stray positional argument used to be ignored, so `basa deals list <id>`
+// listed every deal and exited 0 — which reads as "that id matched all of
+// these". It is almost always a typo for `show`, and the error says so.
+func TestDealsListRejectsAStrayArgument(t *testing.T) {
+	h := newHarness(t, apiFor(meWith("Acme Agency"), dealsBody, nil))
+	t.Setenv(config.EnvVarToken, "42|token")
+
+	stdout, stderr, code := h.run("deals", "list", "EfhxL", "--env", "local")
+
+	if code != 1 {
+		t.Errorf("exit %d, want 1", code)
+	}
+	if stdout != "" {
+		t.Errorf("nothing should reach stdout, got:\n%s", stdout)
+	}
+	if !strings.Contains(stderr, "EfhxL") || !strings.Contains(stderr, "deals show") {
+		t.Errorf("the error should quote the argument and point at show, got:\n%s", stderr)
+	}
+}
+
+// `show` takes one id. A second is a mistake worth reporting, not something to
+// silently drop.
+func TestDealsShowRejectsASecondArgument(t *testing.T) {
+	h := newHarness(t, apiFor(meWith("Acme Agency"), dealsBody, nil))
+	t.Setenv(config.EnvVarToken, "42|token")
+
+	_, _, code := h.run("deals", "show", "EfhxL", "gbHJd", "--env", "local")
+
+	if code != 1 {
+		t.Errorf("exit %d, want 1", code)
+	}
+}
+
+// A bare `deals show` keeps its own question rather than Cobra's wording.
+func TestDealsShowWithoutAnIDAsksForOne(t *testing.T) {
+	h := newHarness(t, apiFor(meWith("Acme Agency"), dealsBody, nil))
+	t.Setenv(config.EnvVarToken, "42|token")
+
+	_, stderr, code := h.run("deals", "show", "--env", "local")
+
+	if code != 1 {
+		t.Errorf("exit %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "Which deal?") {
+		t.Errorf("expected the friendly prompt, got:\n%s", stderr)
+	}
+}
+
+// An out-of-range --limit must reach the server, so the operator sees its own
+// 1-100 validation message. Silently dropping it returned a default-sized page
+// and looked like the request had been honoured.
+func TestDealsListForwardsAnOutOfRangeLimit(t *testing.T) {
+	var query string
+	h := newHarness(t, apiFor(meWith("Acme Agency"), dealsBody, &query))
+	t.Setenv(config.EnvVarToken, "42|token")
+
+	_, _, _ = h.run("deals", "list", "--limit", "-1", "--env", "local")
+
+	if !strings.Contains(query, "per_page=-1") {
+		t.Errorf("per_page=-1 should reach the server, got query %q", query)
+	}
+}
+
+// An unset --limit still sends nothing, leaving the page size to the server.
+func TestDealsListOmitsAnUnsetLimit(t *testing.T) {
+	var query string
+	h := newHarness(t, apiFor(meWith("Acme Agency"), dealsBody, &query))
+	t.Setenv(config.EnvVarToken, "42|token")
+
+	_, _, _ = h.run("deals", "list", "--env", "local")
+
+	if strings.Contains(query, "per_page") {
+		t.Errorf("no per_page should be sent when --limit is unset, got query %q", query)
 	}
 }
 
