@@ -40,6 +40,7 @@ func newContractsListCmd(deps *Deps) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List the team's contracts",
+		Args:  rejectStrayArgs("contracts list", "contracts show <id>"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runContractsList(cmd.Context(), deps, client.ContractFilters{
 				Status: status,
@@ -118,6 +119,8 @@ func newContractsShowCmd(deps *Deps) *cobra.Command {
 	return &cobra.Command{
 		Use:   "show <id>",
 		Short: "Show one contract",
+		// At most one, so a bare `contracts show` keeps its own question.
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return fail.UsageHint("Which contract?", "Pass its id: basa contracts show <id> --env <name>")

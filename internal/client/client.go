@@ -247,7 +247,9 @@ func (f ContractFilters) query() url.Values {
 	if f.Status != "" {
 		q.Set("status", f.Status)
 	}
-	if f.Limit > 0 {
+	// != 0 for the same reason as DealFilters: an out-of-range value is the
+	// operator asking for something invalid, and the server owns that message.
+	if f.Limit != 0 {
 		q.Set("per_page", strconv.Itoa(f.Limit))
 	}
 	return q

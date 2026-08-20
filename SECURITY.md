@@ -11,8 +11,12 @@ it keeps one person's inbox off a public page.
 
 ## Scope
 
-This repository is a command-line client. It holds no credentials of its own, no business logic, and no
-customer data — see [AUDIT.md](AUDIT.md) for the evidence behind that claim.
+This repository is a command-line client. It contains no embedded credentials, no business logic, and
+no customer data — see [AUDIT.md](AUDIT.md) for the evidence behind that claim.
+
+It does handle one secret at runtime: the operator's own API token, which `basa auth login` stores in
+the OS keyring, or in a `0600` file where no keyring exists. That token is the asset most worth
+protecting here, so how it is stored, and anything that could leak it, is explicitly in scope below.
 
 **In scope:**
 

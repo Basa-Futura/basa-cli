@@ -32,6 +32,23 @@ Run it rather than trusting a figure quoted here — that is the whole lesson of
 **I said "no business logic" without having checked for server-policy duplication.** One instance
 existed — see finding 4. Fixed.
 
+**A second silent-failure mode, found while re-running these sweeps.** Finding 3 records that `\b`
+matches nothing here. There is a sibling: passing **both** `-F` and `-E` to `grep` makes the
+alternation a literal string, so
+
+```
+grep -F -iE 'claude|co-authored|session'      # matches the literal text "claude|co-authored|session"
+```
+
+reported a clean history when nine commits carried a `Co-Authored-By` trailer. Both failures share one
+shape — the command ran, exited cleanly, and found nothing, which is indistinguishable from a genuine
+pass. Every sweep here now either uses one flag per invocation, or is run against a **control string
+known to be present** to prove the sweep works before its zero is believed:
+
+```
+git grep -F -i -l basa $(git rev-list --all) | wc -l   # must be non-zero, or the sweep is broken
+```
+
 ---
 
 ## What was verified
@@ -210,6 +227,77 @@ or content is exposed.
 
 ---
 
+### 8. Commit author metadata carried a personal email address — **resolved, and the cause fixed separately**
+
+The root commit was authored from a personal-domain address rather than the work one every other
+commit used. Author metadata is published with the repository, permanently, so the address itself is
+not repeated here — see the note at the end of finding 10 about write-ups becoming their own
+disclosure surface.
+
+**The interesting part is why it came back.** An earlier pass rewrote the nine existing commits to the
+work address and reported the finding closed. It reappeared on the very next commit, because the cause
+was never the commits — it is `user.email` in **global** git config, which every repository on that
+machine inherits. Rewriting history treated the symptom; the next commit reintroduced it.
+
+New commits here are made with an explicit `git -c user.email=…` override, and the history is rewritten
+once more. Correcting the global config is the operator's to make, not this repository's.
+
+The generalisable form: when a fix has to hold for every *future* artefact and not just the current
+ones, closing the finding requires changing whatever produces them. A rewrite that leaves the generator
+untouched will read as resolved and quietly regress.
+
+### 9. `THIRD-PARTY-NOTICES.md` did not actually carry the notices — **fixed**
+
+The file was a table of copyright lines and repository links, and it claimed to discharge the
+attribution obligation. It did not. MIT and BSD require the copyright notice **and the permission and
+warranty text** to accompany copies of the software; a statically linked Go binary is a copy, and a
+link is not an inclusion.
+
+Every licence text is now reproduced verbatim in `internal/licenses/`, embedded in the binary, and
+printable with `basa licenses` — so the notices travel with the artefact an operator actually
+downloads, not only with the source they never see.
+
+Two copyright lines in the old table were also wrong, both because they had been taken from a
+repository README rather than from the licence file: go-keyring was recorded as 2019 when its notice
+says **2016**, and wincred as 2018 when its notice says **2014**.
+
+One near-miss worth recording: a licence-file sweep anchored on `LICEN[CS]E*` reports `basecamp/cli` as
+having **no licence at all**, because it names its file `MIT-LICENSE`. Same silent-zero shape as the
+sweep failures above.
+
+*Raised by Copilot review on PR #3.*
+
+### 10. Two commit messages named columns the API withholds — **resolved: messages reworded**
+
+Three column names the API strips from every response — a seller-access token on deals, two
+signature-provider columns on contracts — appeared once each in commit messages, cited there because
+the tests assert their absence. No tracked file named them.
+
+Neither the names nor their absence is actionable to anyone without a token, so this was close to
+immaterial. It was fixed anyway, on the principle that a withheld column is withheld for a reason and
+its name should not be the one part that escapes. The messages now describe the columns by role.
+
+The disclosure paragraph below was the more serious half: it claimed this document had verified the
+absence of exactly the thing that had leaked. That wording is corrected.
+
+**A note on describing a leak while closing it.** The first draft of this finding named all three
+columns in order to explain which ones had leaked — reintroducing them into a tracked file, which
+publishes far more reliably than a commit message does. Writing up a disclosure is itself a disclosure
+surface.
+
+### 11. PR descriptions are a separate surface from repository files — **out of scope by decision**
+
+Findings 1–10 audit tracked files, commit messages, history, and the built binary. Pull-request bodies
+are none of those, and three of them referenced private-repository PR numbers and branch names.
+
+This is out of scope because of how publication is structured: only `Basa-Futura/basa-cli` becomes
+public. The pull requests reviewed here live in a private fork, so their bodies never publish — only
+the commits travel upstream, and those are swept above.
+
+**If that ever changes** — if the repository holding these PRs is itself made public — the bodies need
+re-reading first. The audit boundary is "what a public reader can fetch", and that boundary moves when
+the topology does.
+
 ## What publishing actually discloses
 
 Worth being concrete, since this is the decision being made:
@@ -220,8 +308,16 @@ Worth being concrete, since this is the decision being made:
 - That a private application repository exists.
 
 It does **not** disclose: any hostname, any credential, any customer or creator data, any business
-rule, any pricing or rate logic, any database schema beyond field names the API already returns to
-authorised callers, or anything about infrastructure.
+rule, any pricing or rate logic, or anything about infrastructure.
+
+**One qualification on schema, because the earlier wording of this paragraph was wrong.** It claimed no
+"database schema beyond field names the API already returns to authorised callers". Two commit messages
+named three columns the API deliberately **withholds** — a seller-access token on deals, and two
+signature-provider columns on contracts — named there precisely because the tests assert they are
+absent from every response. Three column names grant nobody anything, so the exposure was immaterial.
+The inaccurate claim was the problem: a boundary stated more tightly than it is true manufactures
+exactly the confidence this document exists to earn. Both the claim and the messages are now fixed —
+see finding 10.
 
 Reaching any of that requires a valid token **and** the `feature-api-tokens` flag on the account.
 Knowing the endpoint shape does not help an attacker without one — the same reason Basecamp, HEY, and
@@ -229,6 +325,16 @@ Fizzy all ship public CLIs against non-public APIs.
 
 ## Verdict
 
-Publish once findings 1, 2, and 3 are settled. Nothing in the code, the history, or the built binary
-is disqualifying, and the two substantive claims — read-only, and no domain logic — hold up under
-direct inspection now that finding 4 is fixed.
+Publishable. Findings 1, 2, 3, 4, 8, and 9 are resolved; 5, 6, 7, and 10 are accepted with reasons
+recorded; 11 is out of scope while the public repository is `Basa-Futura/basa-cli` alone. Nothing in the
+code, the history, or the built binary is disqualifying, and the two substantive claims — read-only, and
+no client-side domain logic — hold up under direct inspection.
+
+**One action sits outside this repository.** Finding 8 is fixed in the history, but its cause is a
+global `user.email` set to a personal domain. Until that is changed on the machine doing the committing,
+the next commit reintroduces the address this audit just removed. Rewriting history again would not
+prevent it.
+
+**What would change this verdict:** a write verb reaching the client, a second hostname appearing in
+source, a dependency arriving under a copyleft licence, or the repository holding these pull requests
+being made public (finding 11). Each has a re-runnable command above; none is a judgement call.

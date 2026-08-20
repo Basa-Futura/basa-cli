@@ -138,6 +138,50 @@ func TestContractsListPassesTheStatusFilter(t *testing.T) {
 	}
 }
 
+// Same defect the deals commands had: a stray positional was ignored, so
+// `basa contracts list <id>` returned the whole list and exited 0.
+func TestContractsListRejectsAStrayArgument(t *testing.T) {
+	h := newHarness(t, contractsAPI(meWith("Acme Agency"), contractsBody, nil))
+	t.Setenv(config.EnvVarToken, "42|token")
+
+	stdout, stderr, code := h.run("contracts", "list", "EfhxL", "--env", "local")
+
+	if code != 1 {
+		t.Errorf("exit %d, want 1", code)
+	}
+	if stdout != "" {
+		t.Errorf("nothing should reach stdout, got:\n%s", stdout)
+	}
+	if !strings.Contains(stderr, "contracts show") {
+		t.Errorf("the error should point at show, got:\n%s", stderr)
+	}
+}
+
+func TestContractsShowRejectsASecondArgument(t *testing.T) {
+	h := newHarness(t, contractsAPI(meWith("Acme Agency"), contractsBody, nil))
+	t.Setenv(config.EnvVarToken, "42|token")
+
+	_, _, code := h.run("contracts", "show", "EfhxL", "VqXmZ", "--env", "local")
+
+	if code != 1 {
+		t.Errorf("exit %d, want 1", code)
+	}
+}
+
+// An out-of-range limit must reach the server so its own 1-100 message is what
+// the operator sees, rather than a silently default-sized page.
+func TestContractsListForwardsAnOutOfRangeLimit(t *testing.T) {
+	var query string
+	h := newHarness(t, contractsAPI(meWith("Acme Agency"), contractsBody, &query))
+	t.Setenv(config.EnvVarToken, "42|token")
+
+	_, _, _ = h.run("contracts", "list", "--limit", "-1", "--env", "local")
+
+	if !strings.Contains(query, "per_page=-1") {
+		t.Errorf("per_page=-1 should reach the server, got query %q", query)
+	}
+}
+
 func TestContractsListSaysSoWhenEmpty(t *testing.T) {
 	empty := `{"data":[],"meta":{"current_page":1,"last_page":1,"per_page":25,"total":0}}`
 	h := newHarness(t, contractsAPI(meWith("Acme Agency"), empty, nil))

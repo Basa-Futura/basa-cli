@@ -1,11 +1,26 @@
 # Third-party notices
 
 The `basa` binary statically links the components below. Each is used under its own permissive
-licence, reproduced or linked here as those licences require.
+licence, and **the full text of every one is reproduced verbatim** in
+[`internal/licenses/`](internal/licenses/).
 
-This file exists because of a specific obligation: MIT and BSD require their copyright and permission
-notices to travel with "copies or substantial portions" of the software, and a compiled Go binary
-contains that code. Publishing the notices with the source and the release satisfies it.
+Those texts are embedded in the binary. Run:
+
+```bash
+basa licenses
+```
+
+## Why verbatim, and why embedded
+
+MIT and BSD do not merely require attribution. They require that the copyright notice **and the
+permission and warranty text** accompany "copies or substantial portions" of the software, and a
+statically linked Go binary is such a copy. A table of copyright lines does not satisfy that, and a
+link satisfies it even less — a link is not inclusion, and it rots.
+
+An earlier version of this file was a table of copyrights and repository links that claimed to
+discharge the obligation. It did not. The texts now travel two ways: with the source, in
+`internal/licenses/`, and inside the compiled artefact via `basa licenses` — which is the copy an
+operator actually downloads.
 
 **None of these licences requires `basa` itself to be open source.** They are permissive, not copyleft
 — see [LICENSE](LICENSE) §5. No GPL, LGPL, or AGPL component is present anywhere in the dependency
@@ -13,43 +28,48 @@ tree.
 
 ## Linked in every build
 
-| Component | Licence | Copyright |
-|---|---|---|
-| [github.com/basecamp/cli](https://github.com/basecamp/cli) | MIT | Copyright 2025 37signals LLC |
-| [github.com/spf13/cobra](https://github.com/spf13/cobra) | Apache-2.0 | Copyright 2013–2023 The Cobra Authors |
-| [github.com/spf13/pflag](https://github.com/spf13/pflag) | BSD-3-Clause | Copyright 2012 Alex Ogier; Copyright 2012 The Go Authors |
-| [github.com/zalando/go-keyring](https://github.com/zalando/go-keyring) | MIT | Copyright 2019 Zalando SE |
-| [golang.org/x/term](https://golang.org/x/term) | BSD-3-Clause | Copyright 2009 The Go Authors |
-| [golang.org/x/sys](https://golang.org/x/sys) | BSD-3-Clause | Copyright 2009 The Go Authors |
+| Component | Version | Licence | Copyright | Text |
+|---|---|---|---|---|
+| github.com/basecamp/cli | v0.2.1 | MIT | Copyright 2025 37signals LLC | [basecamp-cli.txt](internal/licenses/basecamp-cli.txt) |
+| github.com/spf13/cobra | v1.10.2 | Apache-2.0 | Copyright 2013–2023 The Cobra Authors | [spf13-cobra.txt](internal/licenses/spf13-cobra.txt) |
+| github.com/spf13/pflag | v1.0.10 | BSD-3-Clause | Copyright (c) 2012 Alex Ogier; Copyright (c) 2012 The Go Authors | [spf13-pflag.txt](internal/licenses/spf13-pflag.txt) |
+| github.com/zalando/go-keyring | v0.2.7 | MIT | Copyright (c) 2016 Zalando SE | [zalando-go-keyring.txt](internal/licenses/zalando-go-keyring.txt) |
+| golang.org/x/term | v0.45.0 | BSD-3-Clause | Copyright 2009 The Go Authors | [golang-x-term.txt](internal/licenses/golang-x-term.txt) |
+| golang.org/x/sys | v0.47.0 | BSD-3-Clause | Copyright 2009 The Go Authors | [golang-x-sys.txt](internal/licenses/golang-x-sys.txt) |
 
 ## Linked on Linux only
 
-| Component | Licence | Copyright |
-|---|---|---|
-| [github.com/godbus/dbus](https://github.com/godbus/dbus) | BSD-2-Clause | Copyright 2013 Georg Reinke, Google |
+| Component | Version | Licence | Copyright | Text |
+|---|---|---|---|---|
+| github.com/godbus/dbus/v5 | v5.2.2 | BSD-2-Clause | Copyright (c) 2013, Georg Reinke, Google | [godbus-dbus.txt](internal/licenses/godbus-dbus.txt) |
 
 Used by `go-keyring` for the Secret Service keyring backend.
 
 ## Linked on Windows only
 
-| Component | Licence | Copyright |
-|---|---|---|
-| [github.com/danieljoos/wincred](https://github.com/danieljoos/wincred) | MIT | Copyright 2018 Daniel Joos |
+| Component | Version | Licence | Copyright | Text |
+|---|---|---|---|---|
+| github.com/danieljoos/wincred | v1.2.3 | MIT | Copyright (c) 2014 Daniel Joos | [danieljoos-wincred.txt](internal/licenses/danieljoos-wincred.txt) |
 
 Used by `go-keyring` for the Windows Credential Manager backend.
+
+Both platform-specific notices are embedded in **every** build, not only the platform that links them.
+Carrying eight short files costs a few kilobytes; a notice missing from the one build that needed it
+costs more.
 
 ## Notes
 
 **Apache-2.0 §4(d)** requires propagating the contents of a `NOTICE` file where the licensed work
 includes one. Cobra ships no `NOTICE` file, so there is nothing to propagate beyond its licence text
-and copyright, both recorded above.
+and copyright, both recorded above and reproduced in full.
 
 **No component is modified.** `basa` imports each as a dependency and vendors none of it, so there are
 no changes to state under Apache-2.0 §4(b).
 
 ## Regenerating this list
 
-The set of linked components differs by platform, because the keyring backend does. To re-derive it:
+The set of linked components differs by platform, because the keyring backend does. Resolve the set,
+then the exact versions:
 
 ```bash
 for os in darwin linux windows; do
@@ -57,6 +77,15 @@ for os in darwin linux windows; do
   GOOS=$os GOARCH=amd64 go list -deps ./cmd/basa \
     | grep -E '^(github|golang|gopkg)' | cut -d/ -f1-3 | sort -u
 done
+
+# Versions actually linked — go.sum may hold several, `go list -m` names the one in use.
+go list -m -f '{{.Path}} {{.Version}}' all | grep -E 'basecamp|spf13|zalando|golang.org/x/(term|sys)|godbus|danieljoos'
 ```
 
-Licence texts live in the module cache under `$(go env GOMODCACHE)`.
+Copy each licence file out of `$(go env GOMODCACHE)` into `internal/licenses/`. Match on
+`LICEN[CS]E*`, `MIT-LICENSE`, and `COPYING` — `basecamp/cli` names its file `MIT-LICENSE`, so a
+pattern anchored only on `LICENSE` silently misses it and the notice goes missing.
+
+Take the copyright line from the licence file itself, never from the repository's README or a previous
+version of this table. Two entries here were wrong that way: go-keyring was recorded as 2019 when its
+notice says 2016, and wincred as 2018 when its notice says 2014.

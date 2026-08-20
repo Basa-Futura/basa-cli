@@ -120,6 +120,11 @@ main() {
 
   platform=$(detect_platform)
   version="${BASA_VERSION:-$(latest_version)}"
+  # Accept both "0.1.0" and "v0.1.0". latest_version already strips the
+  # prefix; BASA_VERSION is whatever the operator typed, and the tag form is
+  # the one they will copy from the releases page. Without this, v0.1.0 built
+  # a /releases/download/vv0.1.0 URL and failed as "no such release".
+  version="${version#v}"
   asset="${BINARY}-${platform}"
   base="https://github.com/${REPO}/releases/download/v${version}"
 

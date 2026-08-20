@@ -93,6 +93,7 @@ Run `basa` on its own at any time to see the available commands.
 | `basa auth status` | Same as `me`, phrased as a health check |
 | `basa auth logout` | Remove the stored token from this machine |
 | `basa version` | Which build this is |
+| `basa licenses` | Third-party licence notices, in full |
 
 ### Which environment — always required
 
@@ -274,4 +275,5 @@ Published so the people who run it can read and verify it, and so it can be inst
 authenticating to a private repository. See [LICENSE](LICENSE).
 
 Third-party components are used under their own permissive licences (MIT, Apache-2.0, BSD) — none of
-which requires this software to be open source. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+which requires this software to be open source. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md),
+or run `basa licenses` to print every notice in full from the binary itself.
