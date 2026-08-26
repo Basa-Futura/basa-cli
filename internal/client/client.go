@@ -80,11 +80,22 @@ type Team struct {
 
 // Deal mirrors the fields of the deals endpoints that the CLI renders.
 type Deal struct {
-	ID    string `json:"id"`
+	ID string `json:"id"`
+	// Stage is the coarse pipeline position: outreach, negotiation,
+	// contracting, execution. It is what --stage filters on.
 	Stage *struct {
 		Slug  string `json:"slug"`
 		Label string `json:"label"`
 	} `json:"stage"`
+	// Status is the finer lifecycle the web UI shows, derived server-side from
+	// contracts, responses and negotiations. It is NOT the same thing as Stage,
+	// and it is the one to read when the question is "what does my colleague
+	// see in the browser": before the API exposed it, `deals list` and the web
+	// gave different answers about the same deal.
+	Status *struct {
+		Slug  string `json:"slug"`
+		Label string `json:"label"`
+	} `json:"status"`
 	Project *struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`

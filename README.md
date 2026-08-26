@@ -121,10 +121,14 @@ every result, so you can always see which one you are looking at.
 ```
 $ basa deals list -e staging
 staging · Acme Agency
-ID     STAGE        PROJECT          BRAND      COUNTERPARTY  UPDATED
-EfhxL  Contracting  Spring Campaign  Northwind  Sam Rivera    2026-08-19
-gbHJd  Outreach     Spring Campaign  Northwind  Jordan Lee    2026-08-19
+ID     STAGE        STATUS               PROJECT          BRAND      COUNTERPARTY  UPDATED
+EfhxL  Contracting  Awaiting signature   Spring Campaign  Northwind  Sam Rivera    2026-08-19
+gbHJd  Outreach     Outreach sent        Spring Campaign  Northwind  Jordan Lee    2026-08-19
 ```
+
+**`STAGE` and `STATUS` are different things.** Stage is the coarse pipeline position and is what
+`--stage` filters on. Status is the finer lifecycle the Basa web app shows, so it is the column to read
+when you want the answer a colleague sees in the browser.
 
 | Flag | Effect |
 |---|---|

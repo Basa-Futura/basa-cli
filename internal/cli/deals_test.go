@@ -24,6 +24,7 @@ func meWith(teams ...string) string {
 
 const dealsBody = `{"data":[
   {"id":"K3mQz","stage":{"slug":"contracting","label":"Contracting"},
+   "status":{"slug":"awaiting_signature","label":"Awaiting signature"},
    "project":{"id":"9f2c1111-2222-3333-4444-555566667777","name":"Spring Campaign"},
    "brand":{"name":"Acme"},"role":{"name":"Lead Creator"},
    "counterparty":{"name":"Jordan Lee"},"assigned_to":"Dana Reed",
@@ -62,7 +63,13 @@ func TestDealsListRendersATable(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d, want 0. stderr:\n%s", code, stderr)
 	}
-	for _, want := range []string{"ID", "STAGE", "K3mQz", "Contracting", "Spring Campaign", "Acme", "Jordan Lee"} {
+	// STATUS is not a synonym for STAGE. The fixture deliberately gives the deal
+	// a coarse stage of "Contracting" and a status of "Awaiting signature", so a
+	// table that dropped one of them would fail here rather than look plausible.
+	for _, want := range []string{
+		"ID", "STAGE", "STATUS", "K3mQz", "Contracting", "Awaiting signature",
+		"Spring Campaign", "Acme", "Jordan Lee",
+	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("table is missing %q\n--- stdout ---\n%s", want, stdout)
 		}
@@ -460,5 +467,36 @@ func TestDealsShowPropagatesNotFound(t *testing.T) {
 
 	if code != 2 {
 		t.Fatalf("exit %d, want 2", code)
+	}
+}
+
+// A seller-only account gets 403 from every team-scoped endpoint: sellers reach
+// Basa through the invitation links mailed to them, not through tokens.
+//
+// The generic 403 path is already covered in root_test.go. This pins the part
+// that is specific to sellers and easy to regress: the fallback hint tells the
+// operator to "ask a Basa administrator to enable API access", which is the
+// right advice for a missing feature flag and the WRONG advice here — no
+// administrator action makes a seller account into a buyer one. So the server's
+// own hint has to win, and the fallback must not appear.
+func TestDealsListSurfacesTheSellerHintRatherThanTheAdminFallback(t *testing.T) {
+	h := newHarness(t, status(http.StatusForbidden,
+		`{"message":"These endpoints are available to buyer accounts.",`+
+			`"hint":"Seller access is through the invitation links sent to you, not the API."}`))
+	t.Setenv(config.EnvVarToken, "42|sellertoken")
+
+	_, stderr, code := h.run("deals", "list", "--env", "local")
+
+	if code != 4 {
+		t.Fatalf("exit %d, want 4", code)
+	}
+	if !strings.Contains(stderr, "buyer accounts") {
+		t.Errorf("should surface the server's message, got:\n%s", stderr)
+	}
+	if !strings.Contains(stderr, "invitation links") {
+		t.Errorf("should surface the server's hint, got:\n%s", stderr)
+	}
+	if strings.Contains(stderr, "administrator") {
+		t.Errorf("the admin fallback must not appear for a seller; it is wrong advice:\n%s", stderr)
 	}
 }

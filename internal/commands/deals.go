@@ -100,6 +100,7 @@ func runDealsList(ctx context.Context, deps *Deps, filters client.DealFilters) e
 		rows = append(rows, []string{
 			deal.ID,
 			dealStage(deal),
+			dealStatus(deal),
 			dealProject(deal),
 			dealBrand(deal),
 			dealCounterparty(deal),
@@ -109,7 +110,7 @@ func runDealsList(ctx context.Context, deps *Deps, filters client.DealFilters) e
 
 	if err := deps.Out.Data(nil, func(io.Writer) error {
 		return deps.Out.Table(output.Table{
-			Headers: []string{"ID", "STAGE", "PROJECT", "BRAND", "COUNTERPARTY", "UPDATED"},
+			Headers: []string{"ID", "STAGE", "STATUS", "PROJECT", "BRAND", "COUNTERPARTY", "UPDATED"},
 			Rows:    rows,
 		})
 	}); err != nil {
@@ -173,6 +174,7 @@ func runDealsShow(ctx context.Context, deps *Deps, id string) error {
 			{Key: "Team", Value: team.Name},
 			{Key: "Deal", Value: deal.ID},
 			{Key: "Stage", Value: dealStage(*deal)},
+			{Key: "Status", Value: dealStatus(*deal)},
 			{Key: "Project", Value: dealProject(*deal)},
 			{Key: "Brand", Value: dealBrand(*deal)},
 			{Key: "Role", Value: valueOr(deal.Role != nil, func() string { return deal.Role.Name })},
@@ -300,6 +302,15 @@ func dealStage(d client.Deal) string {
 		return "—"
 	}
 	return d.Stage.Label
+}
+
+// Nil for an older server that does not send `status` yet, which renders the
+// same em dash as any other absent field rather than an empty column.
+func dealStatus(d client.Deal) string {
+	if d.Status == nil {
+		return "—"
+	}
+	return d.Status.Label
 }
 
 func dealProject(d client.Deal) string {
