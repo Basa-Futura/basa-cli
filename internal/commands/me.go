@@ -18,9 +18,10 @@ import (
 // Deps is what every command needs: resolved config, a renderer, and the
 // environment the operator asked for.
 type Deps struct {
-	Config  *config.Config
-	Out     *output.Writer
-	EnvFlag string
+	Config   *config.Config
+	Out      *output.Writer
+	EnvFlag  string
+	TeamFlag string
 }
 
 // NewMeCmd builds `basa me`.
