@@ -10,6 +10,7 @@ notice.
 - [Using it](#using-it)
 - [Output](#output)
 - [Exit codes](#exit-codes)
+- [Rate limits](#rate-limits)
 - [Sessions and security](#sessions-and-security)
 - [Development](#development)
 
@@ -168,6 +169,24 @@ a pipeline keeps working even when a command fails, and the JSON stays parseable
 
 `3` and `4` are separate because the fix is different: one you can do yourself, the other needs a
 person.
+
+## Rate limits
+
+The API allows **60 requests a minute, per token**. Past that it refuses, and `basa` exits `1` telling
+you how long to wait:
+
+```
+Too many requests.
+Wait 34 seconds and try again.
+```
+
+That number comes from the server rather than a guess, so it is the real one. If the server declines to
+say, the message falls back to "wait a minute" instead of inventing a figure.
+
+**`basa` never retries on its own.** A tool that quietly sleeps and tries again is one you cannot
+reason about from a script, and a loop that backs off invisibly hides the fact that it is being
+throttled at all. In `--json` mode the wait is in `error.hint` on stdout, so a script can read it and
+decide for itself.
 
 ## Sessions and security
 

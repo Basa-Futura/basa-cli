@@ -8,6 +8,7 @@ package fail
 import (
 	"errors"
 	"fmt"
+	"time"
 )
 
 // Exit codes. Deliberately small: the operators are not engineers, and a code
@@ -135,8 +136,42 @@ func Unreachable(env, url string) *Error {
 	}
 }
 
-func RateLimited() *Error {
-	return &Error{Code: CodeUsage, Msg: "Too many requests.", Hint: "Wait a minute and try again."}
+// RateLimited is the server's throttle answering back. retryAfter is what the
+// server said to wait, which the caller reads from its Retry-After header; zero
+// means it did not say, and the operator gets the vaguer sentence rather than an
+// invented number.
+func RateLimited(retryAfter time.Duration) *Error {
+	hint := "Wait a minute and try again."
+	if retryAfter > 0 {
+		hint = fmt.Sprintf("Wait %s and try again.", waitPhrase(retryAfter))
+	}
+	return &Error{Code: CodeUsage, Msg: "Too many requests.", Hint: hint}
+}
+
+// waitPhrase renders a duration as the largest unit that keeps the number
+// small, because "wait 2 minutes" is a sentence someone can act on and "wait
+// 118 seconds" is one they have to think about.
+//
+// It always rounds up. Waiting slightly too long costs nothing; waiting
+// slightly too little earns another 429.
+func waitPhrase(d time.Duration) string {
+	secs := int64((d + time.Second - 1) / time.Second)
+
+	switch {
+	case secs < 60:
+		return count(secs, "second")
+	case secs < 3600:
+		return count((secs+59)/60, "minute")
+	default:
+		return count((secs+3599)/3600, "hour")
+	}
+}
+
+func count(n int64, unit string) string {
+	if n == 1 {
+		return "1 " + unit
+	}
+	return fmt.Sprintf("%d %ss", n, unit)
 }
 
 func ServerError(env string, status int) *Error {
