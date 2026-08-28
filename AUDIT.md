@@ -84,9 +84,14 @@ All six commits were searched, not just the checkout:
 
 ```
 git log -p --all | grep -nE '^\+.*[0-9]+\|[A-Za-z0-9]{30,}'      # tokens: none
-git log -p --all | grep -inE '^\+.*(basa\.test|chore2|127\.0\.0\.1:800)'  # internal hosts: none
+git log -p --all | grep -inE "^\+.*($HOSTS)"                      # internal hosts: none
 git log -p --all | grep -oE '^\+.*[^ ]+@[^ ]+\.[a-z]{2,}' | grep -v example  # real emails: none
 ```
+
+`$HOSTS` is the internal development domain, the local checkout names, and the dev-server port. The
+pattern is deliberately not spelled out here: this file publishes far more reliably than the commit
+messages it searches, so writing the strings down would undo the check it documents. Anyone re-running
+this supplies their own — see the note at the end of finding 10.
 
 The one hostname in the codebase is `http://localhost:8000` in a config test fixture — generic.
 
@@ -210,14 +215,22 @@ in flag help.
 Judged acceptable: it is generic B2B-SaaS vocabulary, it is what makes the flags usable, and the API
 returns nothing without a token plus the `feature-api-tokens` flag. Kept.
 
-One thing removed: the internal feature codename "Quick Deals" appeared in two comments. Replaced with
-a description of the shape, which is what a reader actually needs.
+One thing removed: an internal feature codename appeared in two comments. Replaced with a description
+of the shape, which is what a reader actually needs. The codename itself is not repeated here, for the
+reason recorded at the end of finding 10 — a tracked file is a more reliable disclosure than the code
+comment it replaced.
 
 ### 6. Pagination policy is restated in help text — **accepted**
 
 `"How many to show (1-100, default 25)"` duplicates the server's cap. Same class as finding 4 but
 harmless: it is a documented request limit, not a security property, and the server rejects anything
 out of range with a 422 the CLI surfaces. Left as is, noted so it is a choice rather than an oversight.
+
+**The same judgement covers the request-rate limit.** The README's rate-limit section names the API's
+per-minute allowance, because the CLI now reports how long to wait when it is hit and a limit the
+operator cannot see is not much use to them. Same reasoning: a documented request limit rather than a
+security property, disclosed by the `429` and its `Retry-After` to anyone holding a token, and worth
+nothing to anyone who does not. Recorded so this too is a choice rather than a slip.
 
 ### 7. The repository names the private application repo — **accepted**
 
@@ -298,6 +311,34 @@ the commits travel upstream, and those are swept above.
 re-reading first. The audit boundary is "what a public reader can fetch", and that boundary moves when
 the topology does.
 
+### 12. The notices list was complete only by hand — **fixed, and the generator fixed with it**
+
+`THIRD-PARTY-NOTICES.md` omitted `github.com/inconshreveable/mousetrap` (Apache-2.0) — the one module in
+`go.mod` with no licence text in `internal/licenses/`. It is Windows-only, reached through `cobra`, which
+uses it to detect being launched from Explorer rather than a shell.
+
+No released artefact was affected: `make build-all` ships darwin and linux, where it does not link, and
+nothing is vendored. But `licenses.go` and the notices page both state that platform-specific notices ride
+in *every* build precisely so a needed one is never missing — `wincred` is carried under that rule and this
+was not. Adding `windows/amd64` to the release matrix is a one-line change, and that day a published binary
+would have linked Apache-2.0 code with no notice accompanying it.
+
+**Why it was missed is the part worth keeping.** The regeneration recipe on the notices page is correct:
+run it, and the windows pass names `mousetrap`. The table had been transcribed rather than regenerated, and
+one row of that pass was dropped. Finding 9 fixed a notices file that claimed a completeness it did not
+have; this is the same defect reached by a different route, which is what makes the recipe insufficient on
+its own.
+
+So the fix is not the missing file. `internal/licenses/licenses_test.go` compares the embedded set against
+`go.mod` and fails in both directions — a dependency with no notice, and a notice with no dependency — plus
+a length-and-warranty check, because an empty file would satisfy a set comparison while carrying nothing at
+all. All three failure shapes were confirmed by reintroducing them before the fix was believed, per the
+rule above.
+
+This is finding 8's lesson applied to a different generator. A fix that must hold for every future
+dependency cannot be a corrected list: correcting the list closes the finding and regresses on the next
+`go get`.
+
 ## What publishing actually discloses
 
 Worth being concrete, since this is the decision being made:
@@ -325,7 +366,7 @@ Fizzy all ship public CLIs against non-public APIs.
 
 ## Verdict
 
-Publishable. Findings 1, 2, 3, 4, 8, and 9 are resolved; 5, 6, 7, and 10 are accepted with reasons
+Publishable. Findings 1, 2, 3, 4, 8, 9, and 12 are resolved; 5, 6, 7, and 10 are accepted with reasons
 recorded; 11 is out of scope while the public repository is `Basa-Futura/basa-cli` alone. Nothing in the
 code, the history, or the built binary is disqualifying, and the two substantive claims — read-only, and
 no client-side domain logic — hold up under direct inspection.
@@ -338,3 +379,7 @@ prevent it.
 **What would change this verdict:** a write verb reaching the client, a second hostname appearing in
 source, a dependency arriving under a copyleft licence, or the repository holding these pull requests
 being made public (finding 11). Each has a re-runnable command above; none is a judgement call.
+
+Two of those now fail a test rather than waiting for someone to re-run a command: a new dependency with
+no notice, and a notice with no dependency. The licence *kind* is still a human read — the test proves a
+dependency arrived, not that it arrived permissively.

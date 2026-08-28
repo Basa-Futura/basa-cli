@@ -50,12 +50,17 @@ Used by `go-keyring` for the Secret Service keyring backend.
 | Component | Version | Licence | Copyright | Text |
 |---|---|---|---|---|
 | github.com/danieljoos/wincred | v1.2.3 | MIT | Copyright (c) 2014 Daniel Joos | [danieljoos-wincred.txt](internal/licenses/danieljoos-wincred.txt) |
+| github.com/inconshreveable/mousetrap | v1.1.0 | Apache-2.0 | Copyright 2022 Alan Shreve (@inconshreveable) | [inconshreveable-mousetrap.txt](internal/licenses/inconshreveable-mousetrap.txt) |
 
-Used by `go-keyring` for the Windows Credential Manager backend.
+`wincred` is used by `go-keyring` for the Windows Credential Manager backend. `mousetrap` is pulled in
+by `cobra`, which uses it on Windows to detect being launched from Explorer rather than a shell.
 
-Both platform-specific notices are embedded in **every** build, not only the platform that links them.
-Carrying eight short files costs a few kilobytes; a notice missing from the one build that needed it
+Every platform-specific notice is embedded in **every** build, not only the platform that links it.
+Carrying nine short files costs a few kilobytes; a notice missing from the one build that needed it
 costs more.
+
+The set is pinned by a test — see [Regenerating this list](#regenerating-this-list). `mousetrap` was
+absent from this file until that test existed, which is the whole argument for having it.
 
 ## Notes
 
@@ -89,3 +94,13 @@ pattern anchored only on `LICENSE` silently misses it and the notice goes missin
 Take the copyright line from the licence file itself, never from the repository's README or a previous
 version of this table. Two entries here were wrong that way: go-keyring was recorded as 2019 when its
 notice says 2016, and wincred as 2018 when its notice says 2014.
+
+**The set is now pinned by a test rather than by remembering to run the above.**
+`internal/licenses/licenses_test.go` compares the embedded `.txt` files against the modules `go.mod`
+requires, and fails in both directions — a dependency with no notice, and a notice with no dependency.
+It reads `go.mod` rather than resolving the per-platform graph on purpose: the policy on this page is to
+carry every notice in every build, so the union of all platforms is the right question, and `go.mod` is
+that union.
+
+That test is the reason this list can be trusted. `mousetrap` — Windows-only, reached through `cobra` —
+was missing from this file for exactly as long as the list was maintained by hand.

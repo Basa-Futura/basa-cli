@@ -10,8 +10,13 @@
 //
 // Linux- and Windows-only components are included in every build's embedded
 // set on purpose. Which keyring backend links is decided at compile time, but
-// the cost of carrying eight short files is a few kilobytes, and a notice that
+// the cost of carrying nine short files is a few kilobytes, and a notice that
 // is present on the wrong platform is harmless where a missing one is not.
+//
+// Because that policy makes the set a union rather than a per-platform
+// resolution, the set is pinned against go.mod by a test. It has to be: a
+// Windows-only dependency was missing from this directory until the test
+// existed, and nothing in a build or a run would have told anyone.
 package licenses
 
 import (

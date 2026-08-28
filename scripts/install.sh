@@ -140,8 +140,13 @@ main() {
     || fail "Could not download ${asset} for v${version}." \
             "Check that a release exists at https://github.com/${REPO}/releases"
 
-  # Verify before making anything executable. A truncated or tampered download
+  # Verify before making anything executable: a truncated or corrupted download
   # must never become a binary on PATH.
+  #
+  # This proves the download arrived intact, not that the release is genuine —
+  # checksums.txt comes from the same release as the binary, so anyone who could
+  # replace one could replace the other. SECURITY.md says so plainly and puts
+  # signing out of scope; the distinction is worth keeping here too.
   say "  verifying"
   curl -fsSL "${base}/checksums.txt" -o "${tmp}/checksums.txt" \
     || fail "Could not download checksums.txt for v${version}."
