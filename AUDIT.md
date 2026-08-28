@@ -18,9 +18,15 @@ Re-run every check in this document with the commands quoted; nothing here is as
 1,100 figure was accurate when the CLI had auth and `me` only, and I repeated it after deals and
 contracts had landed without re-measuring.
 
-The docs now say "under 2,000 lines" rather than an exact count. Re-verifying this audit immediately
-caught the same failure a second time — my own fix to finding 4 added five lines and made a freshly
-written exact figure wrong. A number that goes stale on every commit should not be quoted as a fact.
+The docs now quote no figure at all. The first fix was to state a bound — "under 2,000 lines" — instead
+of an exact count, because re-verifying this audit caught the same failure a second time: my own fix to
+finding 4 added five lines and made a freshly written exact figure wrong.
+
+**Then the bound broke too.** It had been set 47 lines above the true count, and the contracts and
+rate-limit work together carried the total to 2,018 — so a document arguing for publication would have
+shipped asserting something false. The claim is gone rather than raised. A number that goes stale on
+every commit should not be quoted as a fact, and a bound picked just above the number is the same fact
+wearing a hat.
 
 ```
 git ls-files '*.go' | grep -v _test.go | xargs wc -l   # non-test Go
@@ -240,12 +246,13 @@ or content is exposed.
 
 ---
 
-### 8. Commit author metadata carried a personal email address — **resolved, and the cause fixed separately**
+### 8. Commit author metadata carried a personal email address — **history rewritten, then the concern withdrawn**
 
 The root commit was authored from a personal-domain address rather than the work one every other
-commit used. Author metadata is published with the repository, permanently, so the address itself is
-not repeated here — see the note at the end of finding 10 about write-ups becoming their own
-disclosure surface.
+commit used. Author metadata is published with the repository, permanently, and at the time that was
+taken to mean the address should be kept out of it — so it is not written out here, per the note at the
+end of finding 10 about write-ups becoming their own disclosure surface. The decision at the foot of
+this finding revisits that assumption, which is the part nobody had checked.
 
 **The interesting part is why it came back.** An earlier pass rewrote the nine existing commits to the
 work address and reported the finding closed. It reappeared on the very next commit, because the cause
@@ -253,11 +260,21 @@ was never the commits — it is `user.email` in **global** git config, which eve
 machine inherits. Rewriting history treated the symptom; the next commit reintroduced it.
 
 New commits here are made with an explicit `git -c user.email=…` override, and the history is rewritten
-once more. Correcting the global config is the operator's to make, not this repository's.
+once more. Correcting the global config was left as the operator's to make, not this repository's.
 
-The generalisable form: when a fix has to hold for every *future* artefact and not just the current
-ones, closing the finding requires changing whatever produces them. A rewrite that leaves the generator
-untouched will read as resolved and quietly regress.
+**Decision, recorded on review: the premise was wrong, and the finding is withdrawn.** The address is the
+maintainer's public GitHub address, published deliberately elsewhere. There was nothing here to protect,
+so the committer field is left exactly as it stands across the history and the global config needs no
+correction. What survives is a consistency preference — author metadata reads as the work address
+throughout — and the `git -c` override above serves that preference rather than any control.
+
+The generalisable form is worth keeping even though the finding dissolved: when a fix has to hold for
+every *future* artefact and not just the current ones, closing it requires changing whatever produces
+them. A rewrite that leaves the generator untouched will read as resolved and quietly regress.
+
+That mechanism was right. What it was protecting turned out not to need protecting — and the more useful
+lesson is that several paragraphs of correct reasoning sat on an unexamined premise. Nobody had asked
+whether the address was private.
 
 ### 9. `THIRD-PARTY-NOTICES.md` did not actually carry the notices — **fixed**
 
@@ -366,15 +383,14 @@ Fizzy all ship public CLIs against non-public APIs.
 
 ## Verdict
 
-Publishable. Findings 1, 2, 3, 4, 8, 9, and 12 are resolved; 5, 6, 7, and 10 are accepted with reasons
+Publishable. Findings 1, 2, 3, 4, 9, and 12 are resolved; 5, 6, 7, 8, and 10 are accepted with reasons
 recorded; 11 is out of scope while the public repository is `Basa-Futura/basa-cli` alone. Nothing in the
 code, the history, or the built binary is disqualifying, and the two substantive claims — read-only, and
 no client-side domain logic — hold up under direct inspection.
 
-**One action sits outside this repository.** Finding 8 is fixed in the history, but its cause is a
-global `user.email` set to a personal domain. Until that is changed on the machine doing the committing,
-the next commit reintroduces the address this audit just removed. Rewriting history again would not
-prevent it.
+**No action sits outside this repository any more.** The one that did was finding 8, which assumed a
+personal-domain address should not publish. That assumption was withdrawn on review: the address is
+public by choice, so the global `user.email` needs no correction and the existing history stands.
 
 **What would change this verdict:** a write verb reaching the client, a second hostname appearing in
 source, a dependency arriving under a copyleft licence, or the repository holding these pull requests
