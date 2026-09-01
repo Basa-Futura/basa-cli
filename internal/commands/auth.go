@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
@@ -57,7 +58,7 @@ history. Paste it at the prompt, or pipe it in.`,
 	}
 
 	cmd.Flags().StringVar(&url, "url", "", "Base URL of the environment (required the first time)")
-	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "Print the approval URL instead of opening it")
+	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "Do not open a browser (the approval URL is printed either way)")
 
 	return cmd
 }
@@ -103,7 +104,9 @@ func runAuthLogin(ctx context.Context, deps *Deps, url string, noBrowser bool) e
 	// and in CI it would be wrong even if it succeeded — so it is gated on the
 	// same interactivity check that decides whether to prompt at all.
 	if shouldOpenBrowser(stdinIsTerminal(), noBrowser) {
-		if err := openBrowser(pair); err != nil {
+		if !isBrowsable(pair) {
+			out.Notice("Not opening that automatically — only http and https URLs are. Use the URL above.")
+		} else if err := openBrowser(pair); err != nil {
 			out.Notice("Could not open a browser — use the URL above.")
 		}
 	}
@@ -198,6 +201,29 @@ func stdinIsTerminal() bool {
 // shouldOpenBrowser keeps both reasons not to open in one place.
 func shouldOpenBrowser(interactive, noBrowser bool) bool {
 	return interactive && !noBrowser
+}
+
+// isBrowsable reports whether a URL may be handed to the platform's opener.
+// Only http and https, and only with a host.
+//
+// The openers are general-purpose "act on this thing" commands, not browsers:
+// `open` on macOS resolves a filesystem path or launches whatever application
+// has registered a URI scheme, and rundll32's FileProtocolHandler is no
+// narrower. Handing one an unvalidated string turns a mistyped --url into
+// "basa launched something".
+//
+// This is defence in depth rather than a hole being closed — the base URL is
+// the operator's own, from --url or their config file, not anything a server
+// sends. But a typo should not be able to invoke a URI handler, and refusing
+// costs nothing: the URL has already been printed, which is the path that
+// works in every case this rejects.
+func isBrowsable(target string) bool {
+	u, err := url.Parse(target)
+	if err != nil {
+		return false
+	}
+
+	return (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
 }
 
 // openBrowser hands the URL to the platform's opener. Three lines of exec beat

@@ -80,3 +80,35 @@ func TestNormalizeToken(t *testing.T) {
 		t.Errorf("expected exactly one pipe, got %q", got)
 	}
 }
+
+// The openers act on filesystem paths and registered URI schemes, not just web
+// pages, so anything but http/https is refused and the printed URL carries it.
+func TestIsBrowsable(t *testing.T) {
+	cases := map[string]bool{
+		"https://staging.basa.example/cli/pair": true,
+		"http://127.0.0.1:8002/cli/pair":        true,
+		"HTTPS://staging.basa.example/cli/pair": true, // url.Parse lowercases the scheme
+
+		// Would make `open` act on the filesystem.
+		"/etc/passwd/cli/pair":          false,
+		"file:///etc/passwd/cli/pair":   false,
+		"staging.basa.example/cli/pair": false, // no scheme: a relative path
+		"/Applications/Calculator.app":  false,
+
+		// Would invoke whatever registered the scheme.
+		"myapp://open/cli/pair": false,
+		"javascript:alert(1)":   false,
+		"ssh://host/cli/pair":   false,
+
+		// Nothing to open.
+		"":             false,
+		"https://":     false,
+		"http:///path": false,
+	}
+
+	for target, want := range cases {
+		if got := isBrowsable(target); got != want {
+			t.Errorf("isBrowsable(%q) = %v, want %v", target, got, want)
+		}
+	}
+}

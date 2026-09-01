@@ -611,6 +611,11 @@ func TestLoginHelpNamesTheConsentScreenAndNotTheSettingsMenu(t *testing.T) {
 	if !strings.Contains(stdout, "--no-browser") {
 		t.Errorf("help should document --no-browser, got:\n%s", stdout)
 	}
+	// The URL is printed whether or not the flag is passed, so the description
+	// must not imply that printing is what the flag turns on.
+	if !strings.Contains(stdout, "printed either way") {
+		t.Errorf("--no-browser help should say the URL prints regardless, got:\n%s", stdout)
+	}
 	for _, gone := range []string{"settings menu", "API Tokens", "ability"} {
 		if strings.Contains(stdout, gone) {
 			t.Errorf("help should no longer mention %q, got:\n%s", gone, stdout)
