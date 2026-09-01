@@ -340,11 +340,20 @@ in *every* build precisely so a needed one is never missing — `wincred` is car
 was not. Adding `windows/amd64` to the release matrix is a one-line change, and that day a published binary
 would have linked Apache-2.0 code with no notice accompanying it.
 
-**Why it was missed is the part worth keeping.** The regeneration recipe on the notices page is correct:
-run it, and the windows pass names `mousetrap`. The table had been transcribed rather than regenerated, and
-one row of that pass was dropped. Finding 9 fixed a notices file that claimed a completeness it did not
-have; this is the same defect reached by a different route, which is what makes the recipe insufficient on
-its own.
+**Why it was missed is the part worth keeping.** The recipe's first command — which components link, per
+platform — was correct: run it, and the windows pass names `mousetrap`. The table had been transcribed
+rather than regenerated, and one row of that pass was dropped.
+
+**Its second command was not correct, and this document said it was.** A Copilot review of this PR caught
+that *after* the notice had been added: the "exact versions" step filtered `go list -m all` through a
+`grep -E` alternation of the dependency names it expected, so the step documented for finding versions
+could not report the version of the entry just added to the table. Both commands now ask the build what
+links instead of naming what to look for, so neither carries a list that can go stale.
+
+Finding 9 fixed a notices file that claimed a completeness it did not have. This is the same defect twice
+more — once in the table, once in the instructions for rebuilding the table — and the second one was found
+by a reviewer reading the fix for the first. A hand-maintained list does not stop being one because the
+paragraph above it explains why hand-maintained lists fail.
 
 So the fix is not the missing file. `internal/licenses/licenses_test.go` compares the embedded set against
 `go.mod` and fails in both directions — a dependency with no notice, and a notice with no dependency — plus

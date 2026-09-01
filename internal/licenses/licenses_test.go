@@ -1,6 +1,8 @@
 package licenses
 
 import (
+	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -145,4 +147,71 @@ func noticeFile(module string) string {
 	}
 
 	return strings.Join(parts, "-") + ".txt"
+}
+
+// failAfter writes happily up to limit bytes and then fails, standing in for a
+// full disk or a writer closed under us.
+type failAfter struct {
+	written int
+	limit   int
+}
+
+func (f *failAfter) Write(p []byte) (int, error) {
+	if f.written >= f.limit {
+		return 0, errors.New("no space left on device")
+	}
+	f.written += len(p)
+	return len(p), nil
+}
+
+// A truncated run must not report success. WriteTo is how the notices reach
+// someone who downloaded a binary, so "wrote half of them and exited 0" would
+// claim an obligation was discharged when it was not.
+func TestWriteToReportsWriteFailures(t *testing.T) {
+	for name, limit := range map[string]int{
+		"fails immediately":     0,
+		"fails after a header":  120,
+		"fails mid-way through": 5000,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := WriteTo(&failAfter{limit: limit}); err == nil {
+				t.Error("want an error from a failing writer, got nil")
+			}
+		})
+	}
+}
+
+// The good path still has to emit every notice — an error-latching writer that
+// quietly stopped early would satisfy the test above and break the obligation.
+func TestWriteToEmitsEveryNotice(t *testing.T) {
+	var buf bytes.Buffer
+
+	if err := WriteTo(&buf); err != nil {
+		t.Fatalf("WriteTo: %v", err)
+	}
+
+	names, err := All()
+	if err != nil {
+		t.Fatalf("All(): %v", err)
+	}
+	if len(names) == 0 {
+		t.Fatal("no notices embedded")
+	}
+
+	for _, name := range names {
+		if !strings.Contains(buf.String(), name) {
+			t.Errorf("output is missing the notice for %s", name)
+		}
+	}
+
+	// Each licence body, not just its file name, has to be in there.
+	for _, name := range names {
+		body, err := texts.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		if !bytes.Contains(buf.Bytes(), body) {
+			t.Errorf("%s is named but its text is not reproduced verbatim", name)
+		}
+	}
 }

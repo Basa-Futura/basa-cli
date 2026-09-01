@@ -76,16 +76,32 @@ no changes to state under Apache-2.0 §4(b).
 The set of linked components differs by platform, because the keyring backend does. Resolve the set,
 then the exact versions:
 
+Which components link, per platform — this is what the tables above are grouped by:
+
 ```bash
 for os in darwin linux windows; do
   echo "== $os"
-  GOOS=$os GOARCH=amd64 go list -deps ./cmd/basa \
-    | grep -E '^(github|golang|gopkg)' | cut -d/ -f1-3 | sort -u
+  GOOS=$os GOARCH=amd64 go list -deps -f '{{if .Module}}{{.Module.Path}}{{end}}' ./cmd/basa \
+    | grep -v '^$' | grep -v '^github.com/Basa-Futura/basa-cli$' | sort -u
 done
-
-# Versions actually linked — go.sum may hold several, `go list -m` names the one in use.
-go list -m -f '{{.Path}} {{.Version}}' all | grep -E 'basecamp|spf13|zalando|golang.org/x/(term|sys)|godbus|danieljoos'
 ```
+
+Every module that links on any platform, with the version in use — the set this page has to
+account for, and the set the test checks:
+
+```bash
+for os in darwin linux windows; do
+  GOOS=$os GOARCH=amd64 go list -deps -f '{{if .Module}}{{.Module.Path}} {{.Module.Version}}{{end}}' ./cmd/basa
+done | grep -v '^$' | grep -v '^github.com/Basa-Futura/basa-cli ' | sort -u
+```
+
+**Neither command carries a list of names, and that is deliberate.** An earlier version of the
+second one filtered `go list -m all` through a `grep -E` alternation of the dependencies it expected
+— which silently omitted `mousetrap` the moment it was added, so the step documented for finding
+versions could not have found the version of the newest entry. Asking the build what links, rather
+than telling it what to look for, has no such failure mode. (`go list -m all` is the wrong source
+regardless: it reports 18 modules here, including test-only ones like `testify` and `go-spew` that
+are never linked and need no notice.)
 
 Copy each licence file out of `$(go env GOMODCACHE)` into `internal/licenses/`. Match on
 `LICEN[CS]E*`, `MIT-LICENSE`, and `COPYING` — `basecamp/cli` names its file `MIT-LICENSE`, so a

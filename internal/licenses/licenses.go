@@ -30,8 +30,8 @@ import (
 //go:embed *.txt
 var texts embed.FS
 
-// All returns every embedded licence text, keyed by file name, sorted so the
-// output is stable between runs.
+// All returns the file name of every embedded licence text, sorted so the output
+// is stable between runs. The texts themselves are read by WriteTo.
 func All() ([]string, error) {
 	entries, err := texts.ReadDir(".")
 	if err != nil {
@@ -49,14 +49,21 @@ func All() ([]string, error) {
 
 // WriteTo prints every licence text, separated so each component's notice is
 // unambiguously its own.
+//
+// Write failures are reported rather than dropped, which matters more here than
+// in ordinary output code. This function is *how* the notices travel with a
+// distributed binary, so a run that writes half of them and returns nil would
+// report an obligation discharged that was not. The caller exits non-zero on it.
 func WriteTo(w io.Writer) error {
 	names, err := All()
 	if err != nil {
 		return err
 	}
 
-	fmt.Fprintf(w, "basa links the following third-party components.\n")
-	fmt.Fprintf(w, "Each notice below is a verbatim copy of the licence as distributed.\n")
+	out := &errWriter{w: w}
+
+	out.printf("basa links the following third-party components.\n")
+	out.printf("Each notice below is a verbatim copy of the licence as distributed.\n")
 
 	for _, name := range names {
 		body, err := texts.ReadFile(name)
@@ -64,11 +71,28 @@ func WriteTo(w io.Writer) error {
 			return err
 		}
 
-		fmt.Fprintf(w, "\n%s\n%s\n\n%s", strings.Repeat("=", 78), name, body)
+		// body is an argument, never the format: a licence text containing a
+		// percent sign must not be interpreted as a verb.
+		out.printf("\n%s\n%s\n\n%s", strings.Repeat("=", 78), name, body)
 		if !strings.HasSuffix(string(body), "\n") {
-			fmt.Fprintln(w)
+			out.printf("\n")
 		}
 	}
 
-	return nil
+	return out.err
+}
+
+// errWriter latches the first write failure so a run of writes needs one check
+// at the end instead of one after every line. After a failure it stops writing,
+// so no caller can be handed a partial notice together with a nil error.
+type errWriter struct {
+	w   io.Writer
+	err error
+}
+
+func (e *errWriter) printf(format string, args ...any) {
+	if e.err != nil {
+		return
+	}
+	_, e.err = fmt.Fprintf(e.w, format, args...)
 }
