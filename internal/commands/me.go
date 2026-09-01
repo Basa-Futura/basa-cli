@@ -57,12 +57,24 @@ func runMe(ctx context.Context, deps *Deps) error {
 	}
 
 	return deps.Out.Data(nil, func(w io.Writer) error {
-		// When the server reports no explicit expiry, the token is governed by
-		// the server's own session limit — and the client does not know what
-		// that is. Naming a duration here would duplicate a server setting and
-		// then quietly lie the moment it changed, which is worse than saying
-		// nothing: an operator would trust a number the client invented.
-		expires := "when the server's session limit is reached"
+		// The server reports the *effective* expiry: the earlier of the token's
+		// own expires_at and the global session window. It has to compute that,
+		// because Sanctum ANDs the two constraints and either alone can kill a
+		// token — so the raw column would say "never" about a token with hours
+		// to live. Against a server that does this, the field is populated and
+		// the fallback below is the exception.
+		//
+		// The fallback deliberately claims nothing. Null means "unbounded" only
+		// on a server that computes the effective value; one that still reports
+		// the raw column returns null for every token it issues, including the
+		// eight-hour ones. The client cannot tell those two servers apart from
+		// a null, so it says what it actually knows rather than reassuring the
+		// operator about a token that dies this afternoon.
+		//
+		// This is also why no duration is named here. It would restate a server
+		// setting the client cannot see, and go quietly wrong the moment it
+		// changed.
+		expires := "not reported by this server"
 		if me.Token.ExpiresAt != nil && *me.Token.ExpiresAt != "" {
 			expires = *me.Token.ExpiresAt
 		}

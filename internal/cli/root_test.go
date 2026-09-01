@@ -442,6 +442,49 @@ func TestVersionPrints(t *testing.T) {
 	}
 }
 
+// --- token expiry ----------------------------------------------------------
+
+// The server computes the effective expiry — the earlier of the token's own
+// column and the global session window — so `auth status` has a real timestamp
+// to show and must show it rather than a description.
+func TestStatusShowsTheExpiryTheServerReports(t *testing.T) {
+	const body = `{"data":{"id":42,"name":"Dana Reed","email":"dana@example.test",
+	  "teams":[{"id":7,"name":"Acme Agency","personal":false}],
+	  "token":{"name":"Basa CLI (paired)","abilities":["read"],
+	  "expires_at":"2026-09-01T18:30:00+00:00"}}}`
+
+	h := newHarness(t, status(http.StatusOK, body))
+	t.Setenv(config.EnvVarToken, "42|token")
+
+	stdout, _, code := h.run("auth", "status", "--env", "local")
+
+	if code != 0 {
+		t.Fatalf("exit %d, want 0", code)
+	}
+	if !strings.Contains(stdout, "2026-09-01T18:30:00+00:00") {
+		t.Errorf("should show the reported expiry, got:\n%s", stdout)
+	}
+}
+
+// A null expiry must not become a claim. It means "unbounded" only on a server
+// that computes the effective value; one reporting the raw column returns null
+// for tokens that die in hours, and the client cannot tell the two apart.
+func TestStatusInventsNoExpiryWhenTheServerReportsNone(t *testing.T) {
+	h := newHarness(t, okHandler) // meBody carries "expires_at":null
+	t.Setenv(config.EnvVarToken, "42|token")
+
+	stdout, _, code := h.run("auth", "status", "--env", "local")
+
+	if code != 0 {
+		t.Fatalf("exit %d, want 0", code)
+	}
+	for _, invented := range []string{"8 hour", "eight hour", "never"} {
+		if strings.Contains(strings.ToLower(stdout), invented) {
+			t.Errorf("must not name a lifetime the server did not report (%q), got:\n%s", invented, stdout)
+		}
+	}
+}
+
 // --- login -----------------------------------------------------------------
 
 func TestLoginRefusesANewEnvironmentWithoutAURL(t *testing.T) {
