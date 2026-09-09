@@ -62,6 +62,32 @@ func newHarness(t *testing.T, handler http.HandlerFunc) *harness {
 	return h
 }
 
+// withStdin replaces os.Stdin for one test so the piped-login path can be
+// driven. readToken reads os.Stdin directly, which is right in production —
+// there is no reader to inject when the point is a no-echo terminal prompt —
+// so the pipe is swapped in here instead.
+func withStdin(t *testing.T, content string) {
+	t.Helper()
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	if _, err := w.WriteString(content); err != nil {
+		t.Fatalf("write to pipe: %v", err)
+	}
+	// Closed immediately: the reader must see EOF rather than block, including
+	// in the empty case, where EOF is the thing under test.
+	_ = w.Close()
+
+	saved := os.Stdin
+	os.Stdin = r
+	t.Cleanup(func() {
+		os.Stdin = saved
+		_ = r.Close()
+	})
+}
+
 func okHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(meBody))
@@ -442,6 +468,49 @@ func TestVersionPrints(t *testing.T) {
 	}
 }
 
+// --- token expiry ----------------------------------------------------------
+
+// The server computes the effective expiry — the earlier of the token's own
+// column and the global session window — so `auth status` has a real timestamp
+// to show and must show it rather than a description.
+func TestStatusShowsTheExpiryTheServerReports(t *testing.T) {
+	const body = `{"data":{"id":42,"name":"Dana Reed","email":"dana@example.test",
+	  "teams":[{"id":7,"name":"Acme Agency","personal":false}],
+	  "token":{"name":"Basa CLI (paired)","abilities":["read"],
+	  "expires_at":"2026-09-01T18:30:00+00:00"}}}`
+
+	h := newHarness(t, status(http.StatusOK, body))
+	t.Setenv(config.EnvVarToken, "42|token")
+
+	stdout, _, code := h.run("auth", "status", "--env", "local")
+
+	if code != 0 {
+		t.Fatalf("exit %d, want 0", code)
+	}
+	if !strings.Contains(stdout, "2026-09-01T18:30:00+00:00") {
+		t.Errorf("should show the reported expiry, got:\n%s", stdout)
+	}
+}
+
+// A null expiry must not become a claim. It means "unbounded" only on a server
+// that computes the effective value; one reporting the raw column returns null
+// for tokens that die in hours, and the client cannot tell the two apart.
+func TestStatusInventsNoExpiryWhenTheServerReportsNone(t *testing.T) {
+	h := newHarness(t, okHandler) // meBody carries "expires_at":null
+	t.Setenv(config.EnvVarToken, "42|token")
+
+	stdout, _, code := h.run("auth", "status", "--env", "local")
+
+	if code != 0 {
+		t.Fatalf("exit %d, want 0", code)
+	}
+	for _, invented := range []string{"8 hour", "eight hour", "never"} {
+		if strings.Contains(strings.ToLower(stdout), invented) {
+			t.Errorf("must not name a lifetime the server did not report (%q), got:\n%s", invented, stdout)
+		}
+	}
+}
+
 // --- login -----------------------------------------------------------------
 
 func TestLoginRefusesANewEnvironmentWithoutAURL(t *testing.T) {
@@ -454,6 +523,103 @@ func TestLoginRefusesANewEnvironmentWithoutAURL(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "--url") {
 		t.Errorf("should ask for --url, got:\n%s", stderr)
+	}
+}
+
+// The URL has to be printed before the token is asked for. An operator running
+// this for the first time has no token yet — telling them where to get one only
+// after demanding it would be useless. So this asserts the URL survives even
+// though the command then fails for want of a token.
+func TestLoginPrintsThePairingURLBeforeAskingForAToken(t *testing.T) {
+	h := newHarness(t, okHandler)
+	withStdin(t, "")
+
+	_, stderr, code := h.run("auth", "login", "--env", "local")
+
+	if code == 0 {
+		t.Fatal("login with no token must not exit 0")
+	}
+	if want := h.server.URL + "/cli/pair"; !strings.Contains(stderr, want) {
+		t.Errorf("should print %q, got:\n%s", want, stderr)
+	}
+}
+
+// Piped login is automation. Opening a browser in CI is wrong even when it
+// works, so the open is gated on the same check that decides whether to prompt.
+//
+// The gate is observable here because the failure notice is the only thing the
+// open branch can emit; its four input combinations are covered directly in
+// internal/commands, since a test binary's stdin is never a terminal.
+func TestLoginOpensNoBrowserWhenStdinIsNotATerminal(t *testing.T) {
+	h := newHarness(t, okHandler)
+	withStdin(t, "")
+
+	_, stderr, _ := h.run("auth", "login", "--env", "local")
+
+	if strings.Contains(strings.ToLower(stderr), "browser") && strings.Contains(stderr, "Could not open") {
+		t.Errorf("must not attempt to open a browser for a piped login, got:\n%s", stderr)
+	}
+}
+
+// The Sanctum format is {id}|{40 alphanumerics}, and the pipe is part of the
+// credential. Splitting on it, or trimming anything but surrounding whitespace,
+// would send the server a token it has never issued.
+func TestLoginStoresATokenContainingAPipeByteForByte(t *testing.T) {
+	const token = "14|vgxvg0gp2KVP8bEVkEYzSjO3QrStUvWxYz012345"
+
+	var seen []string
+	h := newHarness(t, func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(meBody))
+	})
+
+	withStdin(t, token+"\n")
+
+	if _, stderr, code := h.run("auth", "login", "--env", "local"); code != 0 {
+		t.Fatalf("login exited %d:\n%s", code, stderr)
+	}
+
+	// A second command is the actual round trip: it reads the stored copy back
+	// rather than reusing the string login already had in hand.
+	if _, stderr, code := h.run("me", "--env", "local"); code != 0 {
+		t.Fatalf("me exited %d:\n%s", code, stderr)
+	}
+
+	if len(seen) != 2 {
+		t.Fatalf("expected login and me to each call the API, got %d calls", len(seen))
+	}
+	for i, got := range seen {
+		if want := "Bearer " + token; got != want {
+			t.Errorf("call %d sent %q, want %q", i+1, got, want)
+		}
+	}
+}
+
+// The old instructions sent the operator to the settings menu and told them to
+// pick an ability. The consent screen fixes the ability server-side, so that
+// instruction is not merely redundant now — it describes a choice they no longer
+// have.
+func TestLoginHelpNamesTheConsentScreenAndNotTheSettingsMenu(t *testing.T) {
+	h := newHarness(t, okHandler)
+
+	stdout, _, code := h.run("auth", "login", "--help")
+
+	if code != 0 {
+		t.Fatalf("exit %d, want 0", code)
+	}
+	if !strings.Contains(stdout, "--no-browser") {
+		t.Errorf("help should document --no-browser, got:\n%s", stdout)
+	}
+	// The URL is printed whether or not the flag is passed, so the description
+	// must not imply that printing is what the flag turns on.
+	if !strings.Contains(stdout, "printed either way") {
+		t.Errorf("--no-browser help should say the URL prints regardless, got:\n%s", stdout)
+	}
+	for _, gone := range []string{"settings menu", "API Tokens", "ability"} {
+		if strings.Contains(stdout, gone) {
+			t.Errorf("help should no longer mention %q, got:\n%s", gone, stdout)
+		}
 	}
 }
 

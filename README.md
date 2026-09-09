@@ -26,7 +26,7 @@ If you need something it refuses to do, that is a conversation with an engineer,
 
 ## Getting set up
 
-Four steps, in order. Steps 1 and 2 need someone else; 3 and 4 are yours.
+Three steps, in order. Steps 1 and 2 need someone else; 3 is yours.
 
 ### 1. Get API access turned on
 
@@ -53,20 +53,29 @@ basa version          # check it worked
 > installer fails with a clear message and you build from source instead. See
 > [docs/INSTALL.md](docs/INSTALL.md) for both paths and the reasoning.
 
-### 3. Get a token
-
-In Basa, open the settings menu and choose **API Tokens**. Create one with the **read** ability.
-
-It is shown **once**. Copy it before you close the page.
-
-### 4. Log in
+### 3. Log in
 
 ```bash
 basa auth login --env staging --url https://staging.basa.example
 ```
 
-Paste the token at the prompt. It is not echoed, and it is never accepted as a command argument —
-that would leave it sitting in your shell history.
+That prints a link to an approval page in Basa and opens it for you. Approve there, and Basa mints
+the token and shows it **once**, with a copy button. Copy it, come back to the terminal, and paste it
+at the prompt.
+
+The token can read the same things you can already see in Basa, and nothing else. The approval page
+decides that, so there is nothing to pick and nothing to get wrong. If you lose the token, run the
+command again — a fresh one costs nothing, and the old one dies on its own.
+
+It is not echoed when you paste it, and it is never accepted as a command argument — that would
+leave it sitting in your shell history.
+
+Somewhere a browser cannot open — over SSH, say — the link still prints, and `--no-browser` skips
+the attempt:
+
+```bash
+basa auth login --env staging --no-browser
+```
 
 The token goes into your macOS keychain. If no keychain is available it falls back to a file at
 `~/.config/basa/credentials.json` readable only by you, and tells you it did that.
@@ -231,7 +240,8 @@ the token sits on your laptop, and a short life limits the damage if the laptop 
 length is set by the server and can change, so `basa auth status` is the authority, not this page.
 
 `basa auth logout` removes the copy on your machine. It does **not** revoke the token on the server.
-If you think a token has been exposed, delete it in Basa under **API Tokens**. If the whole account
+If you think a token has been exposed, delete it in Basa under **API Tokens** — the ones `basa auth
+login` made are named **Basa CLI (paired)**, so they are easy to pick out. If the whole account
 is a concern, have an administrator turn off your API access — that kills every token you hold at
 once.
 
