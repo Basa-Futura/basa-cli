@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/basecamp/cli/credstore"
+	"github.com/zalando/go-keyring"
 )
 
 const (
@@ -225,12 +226,16 @@ func (c *Config) SaveToken(env, token string) error {
 }
 
 // DeleteToken removes the stored token for an environment. Absent is success —
-// logout must be idempotent so an operator can always reach a known state.
+// logout must be idempotent so an operator can always reach a known state —
+// but only absent. A keyring that refuses, or a credentials file that cannot be
+// rewritten, is a failure to report: "Removed" over a token still on disk is
+// the one thing logout must never say.
 func (c *Config) DeleteToken(env string) error {
-	if err := c.store.Delete(credKey(env)); err != nil {
+	err := c.store.Delete(credKey(env))
+	if err == nil || errors.Is(err, keyring.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
-	return nil
+	return err
 }
 
 // UsingKeyring reports whether the system keyring is in use.
