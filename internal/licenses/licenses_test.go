@@ -4,13 +4,12 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
-
-// mainModule is this repository, which needs no third-party notice.
-const mainModule = "github.com/Basa-Futura/basa-cli"
 
 // TestEveryDependencyHasANotice pins the embedded set against go.mod, in both
 // directions: a dependency with no licence text, and a licence text belonging to
@@ -125,30 +124,6 @@ func requiredModules(t *testing.T) []string {
 	return mods
 }
 
-// noticeFile maps a module path onto the licence file that must carry its
-// notice: <owner>-<repo>.txt, with golang.org/x/... keeping a golang prefix so
-// the files sort together and read unambiguously.
-func noticeFile(module string) string {
-	path := module
-
-	// A major-version suffix is not part of the name: godbus/dbus/v5 is dbus.
-	if i := strings.LastIndex(path, "/v"); i != -1 {
-		if rest := path[i+len("/v"):]; rest != "" && strings.Trim(rest, "0123456789") == "" {
-			path = path[:i]
-		}
-	}
-
-	parts := strings.Split(path, "/")
-	switch parts[0] {
-	case "github.com":
-		parts = parts[1:]
-	case "golang.org":
-		parts[0] = "golang"
-	}
-
-	return strings.Join(parts, "-") + ".txt"
-}
-
 // failAfter writes happily up to limit bytes and then fails, standing in for a
 // full disk or a writer closed under us.
 type failAfter struct {
@@ -213,5 +188,109 @@ func TestWriteToEmitsEveryNotice(t *testing.T) {
 		if !bytes.Contains(buf.Bytes(), body) {
 			t.Errorf("%s is named but its text is not reproduced verbatim", name)
 		}
+	}
+}
+
+// Every embedded text must be byte-for-byte the licence file its module ships.
+// Not "contains the licence" — identical. Eight of these files once carried a
+// hand-written header naming the module and version above the text, which made
+// them handy to read and slightly untrue to the claim that they are verbatim.
+// The module and version now come from build information instead.
+//
+// This is the one test in the package that needs the go tool: identity can only
+// be checked against the source, and `go list -m` is how the source is found.
+// go test already needs the module cache to compile, so nothing new is asked —
+// and there is deliberately no skip. A guard that steps aside when it cannot
+// look is the silent zero this package exists to prevent.
+func TestEveryNoticeIsVerbatim(t *testing.T) {
+	for _, mod := range requiredModules(t) {
+		name := noticeFile(mod)
+		embedded, err := texts.ReadFile(name)
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+			continue
+		}
+
+		src, srcName := licenceFileIn(t, moduleDir(t, mod))
+		if !bytes.Equal(embedded, src) {
+			t.Errorf("%s is not byte-identical to %s's %s (embedded %d bytes, upstream %d)",
+				name, mod, srcName, len(embedded), len(src))
+		}
+	}
+}
+
+func moduleDir(t *testing.T, mod string) string {
+	t.Helper()
+	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", mod).Output()
+	if err != nil {
+		t.Fatalf("go list -m %s: %v", mod, err)
+	}
+	dir := strings.TrimSpace(string(out))
+	if dir == "" {
+		t.Fatalf("go list -m %s: no directory — not in the module cache?", mod)
+	}
+	return dir
+}
+
+// licenceFileIn finds the licence file a module ships. The names vary —
+// basecamp/cli calls its MIT-LICENSE — which is exactly the sweep that once
+// reported that module as having no licence at all.
+func licenceFileIn(t *testing.T, dir string) ([]byte, string) {
+	t.Helper()
+	for _, name := range []string{"LICENSE", "LICENSE.txt", "LICENSE.md", "LICENCE", "MIT-LICENSE", "COPYING"} {
+		if b, err := os.ReadFile(filepath.Join(dir, name)); err == nil {
+			return b, name
+		}
+	}
+	t.Fatalf("no licence file found in %s", dir)
+	return nil, ""
+}
+
+// The built binary names each linked module with the version that was linked,
+// read from its own build information. This builds and runs it because a
+// go-test binary records no dependencies at all — a harness test can never see
+// these lines, and the first attempt at this check learned that the hard way.
+//
+// Build information is per-artefact truth: a module not linked on this platform
+// has no version here, and the notice carried for it says so instead. The
+// expected split therefore depends on runtime.GOOS.
+func TestBuiltBinaryReportsLinkedVersions(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "basa")
+	if out, err := exec.Command("go", "build", "-o", bin, "../../cmd/basa").CombinedOutput(); err != nil {
+		t.Fatalf("go build: %v\n%s", err, out)
+	}
+	out, err := exec.Command(bin, "licenses").Output()
+	if err != nil {
+		t.Fatalf("basa licenses: %v", err)
+	}
+	text := string(out)
+
+	// Linked on every platform: a version line for each, no exceptions.
+	for _, mod := range []string{"github.com/basecamp/cli", "github.com/spf13/cobra", "github.com/spf13/pflag",
+		"github.com/zalando/go-keyring", "golang.org/x/sys", "golang.org/x/term"} {
+		if !strings.Contains(text, "\n"+mod+" v") {
+			t.Errorf("no version line for %s", mod)
+		}
+	}
+
+	// Platform-specific: a version where linked, the carried-not-linked note
+	// everywhere else, and never both or neither.
+	platformOnly := map[string]string{
+		"github.com/godbus/dbus/v5":            "linux",
+		"github.com/danieljoos/wincred":        "windows",
+		"github.com/inconshreveable/mousetrap": "windows",
+	}
+	wantNotes := 0
+	for mod, goos := range platformOnly {
+		linked := goos == runtime.GOOS
+		if linked != strings.Contains(text, "\n"+mod+" v") {
+			t.Errorf("%s: linked-on-%s=%v but version line present=%v", mod, runtime.GOOS, linked, !linked)
+		}
+		if !linked {
+			wantNotes++
+		}
+	}
+	if got := strings.Count(text, "(not linked into this build"); got != wantNotes {
+		t.Errorf("carried-not-linked notes: got %d, want %d on %s", got, wantNotes, runtime.GOOS)
 	}
 }

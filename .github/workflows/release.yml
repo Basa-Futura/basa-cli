@@ -34,23 +34,13 @@ jobs:
       - name: Build all platforms
         run: make build-all VERSION=${GITHUB_REF_NAME#v}
 
-      # The binary already carries these (basa licenses), which is what the MIT
-      # and BSD notice obligations actually require. Attaching them as an asset
-      # too means a reviewer can read the notices without running an unfamiliar
+      # The notices asset is the binary's own output, so it and `basa licenses`
+      # cannot disagree — and the module versions in it come from the binary's
+      # build information, not from anything maintained by hand. Attaching it
+      # means a reviewer can read the notices without running an unfamiliar
       # binary first.
       - name: Collect third-party notices
-        run: |
-          {
-            echo "basa $GITHUB_REF_NAME - third-party licence notices"
-            echo "Verbatim copies of every licence linked into the binary."
-            for f in internal/licenses/*.txt; do
-              echo
-              printf '=%.0s' $(seq 78); echo
-              echo "$f"
-              echo
-              cat "$f"
-            done
-          } > dist/THIRD-PARTY-NOTICES.txt
+        run: ./dist/basa-linux-amd64 licenses > dist/THIRD-PARTY-NOTICES.txt
 
       - name: Publish release
         env:

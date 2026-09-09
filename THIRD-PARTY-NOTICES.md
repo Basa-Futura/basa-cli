@@ -1,7 +1,7 @@
 # Third-party notices
 
 The `basa` binary statically links the components below. Each is used under its own permissive
-licence, and **the full text of every one is reproduced verbatim** in
+licence, and **the full text of every one is reproduced byte-for-byte** in
 [`internal/licenses/`](internal/licenses/).
 
 Those texts are embedded in the binary. Run:
@@ -55,7 +55,8 @@ Used by `go-keyring` for the Secret Service keyring backend.
 `wincred` is used by `go-keyring` for the Windows Credential Manager backend. `mousetrap` is pulled in
 by `cobra`, which uses it on Windows to detect being launched from Explorer rather than a shell.
 
-Every platform-specific notice is embedded in **every** build, not only the platform that links it.
+Every platform-specific notice is embedded in **every** build, not only the platform that links it, and
+`basa licenses` marks the ones a given build carries but did not link, in place of a version.
 Carrying nine short files costs a few kilobytes; a notice missing from the one build that needed it
 costs more.
 
@@ -103,9 +104,14 @@ than telling it what to look for, has no such failure mode. (`go list -m all` is
 regardless: it reports 18 modules here, including test-only ones like `testify` and `go-spew` that
 are never linked and need no notice.)
 
-Copy each licence file out of `$(go env GOMODCACHE)` into `internal/licenses/`. Match on
-`LICEN[CS]E*`, `MIT-LICENSE`, and `COPYING` — `basecamp/cli` names its file `MIT-LICENSE`, so a
-pattern anchored only on `LICENSE` silently misses it and the notice goes missing.
+Copy each licence file out of `$(go env GOMODCACHE)` into `internal/licenses/` **as it is, with
+nothing added** — not even a line naming the module. Eight of these files once carried exactly that
+header, and it made them not-quite-verbatim while giving the version a second place to go stale.
+`basa licenses` reads module and version from the binary's own build information instead, and
+`TestEveryNoticeIsVerbatim` compares every file against the module's own and fails on a single byte.
+
+Match on `LICEN[CS]E*`, `MIT-LICENSE`, and `COPYING` — `basecamp/cli` names its file `MIT-LICENSE`,
+so a pattern anchored only on `LICENSE` silently misses it and the notice goes missing.
 
 Take the copyright line from the licence file itself, never from the repository's README or a previous
 version of this table. Two entries here were wrong that way: go-keyring was recorded as 2019 when its
