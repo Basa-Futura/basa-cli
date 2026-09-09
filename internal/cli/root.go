@@ -94,6 +94,12 @@ assumes production is one typo away from trouble.`,
 	root.SetArgs(args)
 
 	if err := root.ExecuteContext(context.Background()); err != nil {
+		// Cobra validates positional arguments before PersistentPreRun fires, so
+		// an Args error arrives here with out.JSON still at its default even
+		// though --json was already parsed. Sync it from the flag, or JSON mode
+		// gets an empty stdout for exactly the error a script most needs to
+		// read.
+		out.JSON = asJSON
 		out.Error(fail.MessageOf(err), fail.HintOf(err))
 		return fail.CodeOf(err)
 	}
