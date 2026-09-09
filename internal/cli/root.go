@@ -13,6 +13,7 @@ import (
 	"github.com/Basa-Futura/basa-cli/internal/commands"
 	"github.com/Basa-Futura/basa-cli/internal/config"
 	"github.com/Basa-Futura/basa-cli/internal/fail"
+	"github.com/Basa-Futura/basa-cli/internal/licenses"
 	"github.com/Basa-Futura/basa-cli/internal/output"
 )
 
@@ -83,7 +84,9 @@ assumes production is one typo away from trouble.`,
 		commands.NewAuthCmd(deps),
 		commands.NewMeCmd(deps),
 		commands.NewDealsCmd(deps),
+		commands.NewContractsCmd(deps),
 		newVersionCmd(stdout),
+		newLicensesCmd(stdout),
 	)
 
 	root.SetOut(stdout)
@@ -96,6 +99,20 @@ assumes production is one typo away from trouble.`,
 	}
 
 	return fail.CodeOK
+}
+
+// newLicensesCmd makes the embedded third-party notices reachable from the
+// binary itself. THIRD-PARTY-NOTICES.md travels with the source; this travels
+// with the download, which is where the MIT and BSD obligations actually bite.
+func newLicensesCmd(stdout io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "licenses",
+		Short: "Print third-party licence notices",
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return licenses.WriteTo(stdout)
+		},
+	}
 }
 
 func newVersionCmd(stdout io.Writer) *cobra.Command {

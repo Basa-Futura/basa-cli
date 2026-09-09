@@ -34,16 +34,23 @@ Until that happens, every command will tell you access is not enabled.
 
 ### 2. Install it
 
-**Not yet available as a download.** Where the binary gets hosted is still an open decision, so for
-now it is built from source, which needs Go. See [docs/INSTALL.md](docs/INSTALL.md) for the full
-picture and why.
+Paste this into Terminal:
 
 ```bash
-git clone https://github.com/Basa-Futura/basa-cli.git
-cd basa-cli
-make install          # builds and copies to ~/.local/bin/basa
+curl -fsSL https://raw.githubusercontent.com/Basa-Futura/basa-cli/main/scripts/install.sh | bash
+```
+
+It works out your platform, verifies the download against the published checksums, and installs to
+`~/.local/bin/basa`. If that is not on your `PATH` it tells you the one line to add.
+
+```bash
 basa version          # check it worked
 ```
+
+> **This needs the repository to be public and to have a published release** — the installer
+> authenticates with nothing, which is what makes it one line. Neither is true yet, so today the
+> installer fails with a clear message and you build from source instead. See
+> [docs/INSTALL.md](docs/INSTALL.md) for both paths and the reasoning.
 
 ### 3. Get a token
 
@@ -79,11 +86,14 @@ Run `basa` on its own at any time to see the available commands.
 |---|---|
 | `basa deals list` | What is outstanding right now |
 | `basa deals show <id>` | Where one deal stands |
+| `basa contracts list` | What is awaiting signature |
+| `basa contracts show <id>` | Where one contract stands |
 | `basa me` | Who am I, what teams can I see, when does my token expire |
 | `basa auth login` | Store a token for an environment |
 | `basa auth status` | Same as `me`, phrased as a health check |
 | `basa auth logout` | Remove the stored token from this machine |
 | `basa version` | Which build this is |
+| `basa licenses` | Third-party licence notices, in full |
 
 ### Which environment — always required
 
@@ -143,6 +153,32 @@ basa deals show EfhxL -e staging
 
 If more deals match than are shown, it says so — a partial list is never left looking complete.
 
+### Contracts
+
+"What is awaiting signature" is `--status ready_for_signature`.
+
+```
+$ basa contracts list -e staging --status ready_for_signature
+staging · Acme Agency
+ID     STATUS               NAME                       RECIPIENT   DEAL   UPDATED
+EfhxL  Ready for Signature  Spring Campaign agreement  Sam Rivera  VqXmZ  2026-08-19
+```
+
+| Flag | Effect |
+|---|---|
+| `--status` | `draft`, `ready_for_signature`, `signed`, `declined`, `voided` |
+| `--limit`, `-n` | How many to show, 1–100 (default 25) |
+
+A contract in the **DEAL** column reading `standalone` is not missing data — it is a contract created
+without a deal attached, which is a normal shape.
+
+### A note on ids
+
+Ids are short strings like `EfhxL`. **The same string can be a valid id for more than one kind of
+thing** — a deal and a contract can share one. That is fine as long as you use it with the command it
+came from: `basa contracts show EfhxL` and `basa deals show EfhxL` are both valid and will show you
+different things. If you get an unexpected result, check you are using the right command for the id.
+
 ---
 
 ## Output
@@ -171,8 +207,9 @@ person.
 
 ## Sessions and security
 
-**Sessions last 8 hours**, so you will log in roughly twice a day. That is deliberate — the token
-sits on your laptop, and a short-lived one limits the damage if the laptop goes missing.
+**Sessions are short — currently 8 hours**, so you will log in roughly twice a day. That is deliberate:
+the token sits on your laptop, and a short life limits the damage if the laptop goes missing. The exact
+length is set by the server and can change, so `basa auth status` is the authority, not this page.
 
 `basa auth logout` removes the copy on your machine. It does **not** revoke the token on the server.
 If you think a token has been exposed, delete it in Basa under **API Tokens**. If the whole account
@@ -233,5 +270,10 @@ what stops domain logic leaking into a Go binary that has no business holding an
 
 ## Licence
 
-Uses [`github.com/basecamp/cli`](https://github.com/basecamp/cli) for credential storage —
-MIT, Copyright 2025 37signals LLC.
+**Proprietary — source-visible, not open source.** Copyright (c) 2026 Basa Futura, all rights reserved.
+Published so the people who run it can read and verify it, and so it can be installed without
+authenticating to a private repository. See [LICENSE](LICENSE).
+
+Third-party components are used under their own permissive licences (MIT, Apache-2.0, BSD) — none of
+which requires this software to be open source. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md),
+or run `basa licenses` to print every notice in full from the binary itself.

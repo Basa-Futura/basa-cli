@@ -57,7 +57,12 @@ func runMe(ctx context.Context, deps *Deps) error {
 	}
 
 	return deps.Out.Data(nil, func(w io.Writer) error {
-		expires := "when the 8 hour session ends"
+		// When the server reports no explicit expiry, the token is governed by
+		// the server's own session limit — and the client does not know what
+		// that is. Naming a duration here would duplicate a server setting and
+		// then quietly lie the moment it changed, which is worse than saying
+		// nothing: an operator would trust a number the client invented.
+		expires := "when the server's session limit is reached"
 		if me.Token.ExpiresAt != nil && *me.Token.ExpiresAt != "" {
 			expires = *me.Token.ExpiresAt
 		}

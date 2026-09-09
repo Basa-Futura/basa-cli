@@ -385,3 +385,33 @@ func TestLogoutIsIdempotentAndWarnsAboutServerSideValidity(t *testing.T) {
 		t.Errorf("logout should say the token stays valid server-side, got:\n%s", stderr)
 	}
 }
+
+// The attribution obligation is only discharged if the text ships inside the
+// artefact people download, so this asserts the embedded copy is reachable and
+// carries the operative clause -- not merely that a file exists in the repo.
+func TestLicensesCommandPrintsTheEmbeddedNotices(t *testing.T) {
+	h := newHarness(t, func(w http.ResponseWriter, r *http.Request) {})
+
+	stdout, _, code := h.run("licenses")
+
+	if code != 0 {
+		t.Fatalf("exit %d, want 0", code)
+	}
+	// The MIT permission notice is the clause the licence requires to travel.
+	if !strings.Contains(stdout, "The above copyright notice and this permission notice") {
+		t.Error("the MIT permission notice should be in the output")
+	}
+	// One representative of each licence family we link.
+	for _, want := range []string{
+		"37signals LLC",  // basecamp/cli, MIT
+		"Apache License", // cobra, Apache-2.0
+		"Zalando SE",     // go-keyring, MIT
+		"The Go Authors", // x/term and x/sys, BSD-3
+		"Daniel Joos",    // wincred, MIT (Windows-only, embedded anyway)
+		"Georg Reinke",   // godbus, BSD-2 (Linux-only, embedded anyway)
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("expected %q in the notices", want)
+		}
+	}
+}

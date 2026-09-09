@@ -206,6 +206,104 @@ func (c *Client) dealPath(teamID int64, id string) string {
 	return fmt.Sprintf("/api/v1/teams/%d/deals/%s", teamID, url.PathEscape(id))
 }
 
+// --- contracts -------------------------------------------------------------
+
+// Contract mirrors the fields of the contracts endpoints that the CLI renders.
+type Contract struct {
+	ID     string  `json:"id"`
+	Name   *string `json:"name"`
+	Status *struct {
+		Slug  string `json:"slug"`
+		Label string `json:"label"`
+	} `json:"status"`
+	Sequence int `json:"sequence"`
+	// Null for a standalone contract, which has no deal at all.
+	Deal *struct {
+		ID string `json:"id"`
+	} `json:"deal"`
+	SenderTeam *struct {
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
+	} `json:"sender_team"`
+	Recipient  *string `json:"recipient"`
+	SignedAt   *string `json:"signed_at"`
+	DeclinedAt *string `json:"declined_at"`
+	UpdatedAt  *string `json:"updated_at"`
+}
+
+type ContractPage struct {
+	Contracts []Contract
+	Meta      PageMeta
+}
+
+// ContractFilters are the query parameters the contracts listing accepts.
+type ContractFilters struct {
+	Status string
+	Limit  int
+}
+
+func (f ContractFilters) query() url.Values {
+	q := url.Values{}
+	if f.Status != "" {
+		q.Set("status", f.Status)
+	}
+	// != 0 for the same reason as DealFilters: an out-of-range value is the
+	// operator asking for something invalid, and the server owns that message.
+	if f.Limit != 0 {
+		q.Set("per_page", strconv.Itoa(f.Limit))
+	}
+	return q
+}
+
+func (c *Client) Contracts(ctx context.Context, teamID int64, filters ContractFilters) (*ContractPage, error) {
+	var envelope struct {
+		Data []Contract `json:"data"`
+		Meta PageMeta   `json:"meta"`
+	}
+	if err := c.get(ctx, c.contractsPath(teamID, filters), &envelope); err != nil {
+		return nil, err
+	}
+	return &ContractPage{Contracts: envelope.Data, Meta: envelope.Meta}, nil
+}
+
+func (c *Client) ContractsRaw(ctx context.Context, teamID int64, filters ContractFilters) (json.RawMessage, error) {
+	var raw json.RawMessage
+	if err := c.get(ctx, c.contractsPath(teamID, filters), &raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+
+func (c *Client) Contract(ctx context.Context, teamID int64, id string) (*Contract, error) {
+	var envelope struct {
+		Data Contract `json:"data"`
+	}
+	if err := c.get(ctx, c.contractPath(teamID, id), &envelope); err != nil {
+		return nil, err
+	}
+	return &envelope.Data, nil
+}
+
+func (c *Client) ContractRaw(ctx context.Context, teamID int64, id string) (json.RawMessage, error) {
+	var raw json.RawMessage
+	if err := c.get(ctx, c.contractPath(teamID, id), &raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+
+func (c *Client) contractsPath(teamID int64, filters ContractFilters) string {
+	path := fmt.Sprintf("/api/v1/teams/%d/contracts", teamID)
+	if q := filters.query(); len(q) > 0 {
+		path += "?" + q.Encode()
+	}
+	return path
+}
+
+func (c *Client) contractPath(teamID int64, id string) string {
+	return fmt.Sprintf("/api/v1/teams/%d/contracts/%s", teamID, url.PathEscape(id))
+}
+
 func (c *Client) get(ctx context.Context, path string, into any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {

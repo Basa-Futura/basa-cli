@@ -1,0 +1,410 @@
+# Pre-publication audit
+
+**Date:** 2026-08-19
+**Commit audited:** `feat/slice-2b-contracts` @ 150f78f, plus the fixes this document prompted
+**Question:** is this repository safe to make public, and is it as thin as claimed?
+
+**Answer: yes.** All three original blockers are resolved — the licence is decided (proprietary, all
+rights reserved), the security contact is set, and every reference to a named colleague is gone from
+files, messages, and history. Two claims I had made were wrong and are corrected below.
+
+Re-run every check in this document with the commands quoted; nothing here is asserted without one.
+
+---
+
+## Corrections to earlier claims
+
+**I said this was "about 1,100 lines". It is a little over 1,800 lines of Go excluding tests.** The
+1,100 figure was accurate when the CLI had auth and `me` only, and I repeated it after deals and
+contracts had landed without re-measuring.
+
+The docs now quote no figure at all. The first fix was to state a bound — "under 2,000 lines" — instead
+of an exact count, because re-verifying this audit caught the same failure a second time: my own fix to
+finding 4 added five lines and made a freshly written exact figure wrong.
+
+**Then the bound broke too.** It had been set 47 lines above the true count, and the contracts and
+rate-limit work together carried the total to 2,018 — so a document arguing for publication would have
+shipped asserting something false. The claim is gone rather than raised. A number that goes stale on
+every commit should not be quoted as a fact, and a bound picked just above the number is the same fact
+wearing a hat.
+
+```
+git ls-files '*.go' | grep -v _test.go | xargs wc -l   # non-test Go
+git ls-files '*_test.go'               | xargs wc -l   # tests
+```
+
+Run it rather than trusting a figure quoted here — that is the whole lesson of this correction.
+
+**I said "no business logic" without having checked for server-policy duplication.** One instance
+existed — see finding 4. Fixed.
+
+**A second silent-failure mode, found while re-running these sweeps.** Finding 3 records that `\b`
+matches nothing here. There is a sibling: passing **both** `-F` and `-E` to `grep` makes the
+alternation a literal string, so
+
+```
+grep -F -iE 'claude|co-authored|session'      # matches the literal text "claude|co-authored|session"
+```
+
+reported a clean history when nine commits carried a `Co-Authored-By` trailer. Both failures share one
+shape — the command ran, exited cleanly, and found nothing, which is indistinguishable from a genuine
+pass. Every sweep here now either uses one flag per invocation, or is run against a **control string
+known to be present** to prove the sweep works before its zero is believed:
+
+```
+git grep -F -i -l basa $(git rev-list --all) | wc -l   # must be non-zero, or the sweep is broken
+```
+
+---
+
+## What was verified
+
+### Read-only, structurally
+
+Zero write verbs in the entire codebase. Not "we didn't add any" — there are none to find:
+
+```
+git grep -nE 'http\.MethodPost|http\.MethodPut|http\.MethodPatch|http\.MethodDelete' -- '*.go'
+# no matches
+```
+
+### No outbound destination beyond the configured server
+
+The only URL in the source is a documentation placeholder:
+
+```
+git grep -noE 'https?://[a-zA-Z0-9./-]+' -- '*.go' | grep -v _test
+# internal/cli/root.go:56: https://staging.basa.example
+```
+
+Confirmed in the built binary too — no real hostname, no telemetry endpoint, no update check:
+
+```
+strings basa | grep -oE 'https?://[a-zA-Z0-9./-]{6,}' | sort -u
+# two cobra issue links, and staging.basa.example
+```
+
+### No secrets, in the tree or anywhere in history
+
+All six commits were searched, not just the checkout:
+
+```
+git log -p --all | grep -nE '^\+.*[0-9]+\|[A-Za-z0-9]{30,}'      # tokens: none
+git log -p --all | grep -inE "^\+.*($HOSTS)"                      # internal hosts: none
+git log -p --all | grep -oE '^\+.*[^ ]+@[^ ]+\.[a-z]{2,}' | grep -v example  # real emails: none
+```
+
+`$HOSTS` is the internal development domain, the local checkout names, and the dev-server port. The
+pattern is deliberately not spelled out here: this file publishes far more reliably than the commit
+messages it searches, so writing the strings down would undo the check it documents. Anyone re-running
+this supplies their own — see the note at the end of finding 10.
+
+The one hostname in the codebase is `http://localhost:8000` in a config test fixture — generic.
+
+Test fixtures use `example.test` addresses and invented names (Acme Agency, Northwind, Sam Rivera,
+Jordan Lee). No customer, client, or creator data.
+
+### No client-side domain logic
+
+The client never decides what a stage or a status *means*, never validates domain values (the server
+does, and its 422 message is surfaced verbatim), and performs no arithmetic on domain data. The only
+`switch` on anything status-like is HTTP status → exit code mapping in `client.go`.
+
+```
+git grep -nE 'switch (stage|status)|case "outreach|case "draft' -- '*.go' | grep -v _test
+# no matches
+```
+
+`shortDate` truncates an ISO-8601 string to its date. That is the whole of the "computation".
+
+### Dependencies are permissive, and few
+
+Direct: `spf13/cobra` (Apache-2.0), `basecamp/cli` (MIT, 37signals), `golang.org/x/term` (BSD).
+Transitively: `pflag` (BSD), `go-keyring` (MIT), `wincred` (MIT), `godbus/dbus` (BSD), plus test-only
+libraries.
+
+```
+grep -rliE 'GNU GENERAL PUBLIC|GNU AFFERO|GNU LESSER' "$(go env GOMODCACHE)"/{github.com,golang.org,gopkg.in}
+# no matches — nothing copyleft
+```
+
+### The install script
+
+Reviewed as the highest-risk artefact, since operators pipe it to `bash`.
+
+| Control | State |
+|---|---|
+| `set -euo pipefail` | present |
+| HTTPS only | yes |
+| SHA-256 verified **before** `chmod +x` | yes — verify precedes the executable bit |
+| Truncated-download safety | `main "$@"` is the final line, so a partial fetch defines functions and does nothing |
+| Temp handling | `mktemp -d` with a cleanup `trap` |
+| Failure messages | 404 and network failure are distinguished, because they need different actions |
+
+`bash -n` and `shellcheck` both clean. Exercised against real GitHub by pointing `REPO` at a public
+repository with releases: version resolution and download both worked.
+
+**Its limit, stated plainly:** `checksums.txt` ships in the same release as the binary, so it proves
+the download arrived intact — not that the release is genuine. Anyone able to publish a release could
+publish matching checksums. Closing that needs signed releases and a pinned key. The Basecamp
+installer has the same property. Documented in `docs/INSTALL.md` rather than left implied.
+
+---
+
+## Findings
+
+### 1. No `LICENSE` file — **resolved: proprietary, all rights reserved**
+
+Decided deliberately rather than by default. **No permissive dependency obliges this software to be
+open source** — MIT, Apache-2.0 and BSD are permissive, not copyleft, and say nothing about how the
+work that links them is licensed. Only GPL-family licences do that, and none is present.
+
+The one real obligation is attribution: MIT and BSD require their notices to travel with "copies or
+substantial portions", and a compiled Go binary contains that code. Satisfied by
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), which also records that Cobra ships no `NOTICE` file,
+so Apache-2.0 §4(d) has nothing to propagate.
+
+`LICENSE` reserves all rights, with one narrow carve-out: a person authorized to access a Basa account
+may download and run the compiled program for that purpose. Without that carve-out the intended
+operators would be running an unlicensed binary — technically absurd, but worth not writing down. It
+also states that relicensing later, including as open source, remains open.
+
+### 2. Security-reporting address — **resolved**
+
+A public repository needs a stated route for reporting a vulnerability, or reports arrive as public
+issues. `SECURITY.md` directs them to **security@basafutura.com** — a shared alias rather than an
+individual, so it survives staff changes and keeps a personal inbox off a public page.
+
+### 3. A real employee is named in two commit messages — **resolved: history rewritten**
+
+Two commit messages named a colleague by first name and tied them to a job function, which would have
+put internal staffing into permanent public history. Three PR bodies did the same.
+
+Both messages now describe the role instead. PR bodies were edited directly. Test fixtures that used the
+same first name as a sample user are now an invented one, matching the other synthetic names already
+there.
+
+**A correction about how this was found.** The first pass of this audit reported that no tracked file
+named an employee. That was wrong: `git grep -E` with a `\b` word boundary silently matches nothing on
+this platform, so the check returned zero while three files actually contained the name. Fixed-string
+matching found them:
+
+```
+git grep -Fin -e "<name>" -- .    # not: git grep -inE '\b<name>\b'
+```
+
+The lesson generalises past this finding: a verification command that can fail silently is worse than no
+check, because it produces false confidence. Every sweep in this document now uses `-F`.
+
+### 4. Server-side policy was duplicated in the client — **fixed**
+
+`internal/commands/me.go` printed `"when the 8 hour session ends"` when the server reported no explicit
+token expiry. That is a server setting (`SANCTUM_TOKEN_EXPIRATION_MINUTES`) restated as a client-side
+constant: change it on the server and the CLI would confidently tell operators something false about
+how long their credential lives.
+
+This was the only such violation in the *code*, and the one place the client could actively mislead
+about security posture. It now says "when the server's session limit is reached" — true regardless of
+the setting.
+
+Re-verification found the same duplication surviving in `README.md`, which stated "Sessions last 8
+hours" as flat fact. Softened to name it as a server setting that can change. Operator documentation is
+a more defensible place for a concrete number than a compiled constant — "roughly twice a day" is
+genuinely useful — but it should not read as a property of the tool.
+
+### 5. Internal vocabulary becomes public — **accepted, with one change**
+
+Going public publishes Basa's deal pipeline (`outreach`, `negotiation`, `contracting`, `execution`) and
+contract lifecycle (`draft`, `ready_for_signature`, `signed`, `declined`, `voided`), because they appear
+in flag help.
+
+Judged acceptable: it is generic B2B-SaaS vocabulary, it is what makes the flags usable, and the API
+returns nothing without a token plus the `feature-api-tokens` flag. Kept.
+
+One thing removed: an internal feature codename appeared in two comments. Replaced with a description
+of the shape, which is what a reader actually needs. The codename itself is not repeated here, for the
+reason recorded at the end of finding 10 — a tracked file is a more reliable disclosure than the code
+comment it replaced.
+
+### 6. Pagination policy is restated in help text — **accepted**
+
+`"How many to show (1-100, default 25)"` duplicates the server's cap. Same class as finding 4 but
+harmless: it is a documented request limit, not a security property, and the server rejects anything
+out of range with a 422 the CLI surfaces. Left as is, noted so it is a choice rather than an oversight.
+
+**The same judgement covers the request-rate limit.** The README's rate-limit section names the API's
+per-minute allowance, because the CLI now reports how long to wait when it is hit and a limit the
+operator cannot see is not much use to them. Same reasoning: a documented request limit rather than a
+security property, disclosed by the `429` and its `Retry-After` to anyone holding a token, and worth
+nothing to anyone who does not. Recorded so this too is a choice rather than a slip.
+
+### 7. The repository names the private application repo — **accepted**
+
+`README.md` and `.gitignore` refer to `basa-web` for where the API and the scope documents live. That
+reveals a private repository exists, which is unremarkable and useful to a maintainer. No path, host,
+or content is exposed.
+
+---
+
+### 8. Commit author metadata carried a personal email address — **history rewritten, then the concern withdrawn**
+
+The root commit was authored from a personal-domain address rather than the work one every other
+commit used. Author metadata is published with the repository, permanently, and at the time that was
+taken to mean the address should be kept out of it — so it is not written out here, per the note at the
+end of finding 10 about write-ups becoming their own disclosure surface. The decision at the foot of
+this finding revisits that assumption, which is the part nobody had checked.
+
+**The interesting part is why it came back.** An earlier pass rewrote the nine existing commits to the
+work address and reported the finding closed. It reappeared on the very next commit, because the cause
+was never the commits — it is `user.email` in **global** git config, which every repository on that
+machine inherits. Rewriting history treated the symptom; the next commit reintroduced it.
+
+New commits here are made with an explicit `git -c user.email=…` override, and the history is rewritten
+once more. Correcting the global config was left as the operator's to make, not this repository's.
+
+**Decision, recorded on review: the premise was wrong, and the finding is withdrawn.** The address is the
+maintainer's public GitHub address, published deliberately elsewhere. There was nothing here to protect,
+so the committer field is left exactly as it stands across the history and the global config needs no
+correction. What survives is a consistency preference — author metadata reads as the work address
+throughout — and the `git -c` override above serves that preference rather than any control.
+
+The generalisable form is worth keeping even though the finding dissolved: when a fix has to hold for
+every *future* artefact and not just the current ones, closing it requires changing whatever produces
+them. A rewrite that leaves the generator untouched will read as resolved and quietly regress.
+
+That mechanism was right. What it was protecting turned out not to need protecting — and the more useful
+lesson is that several paragraphs of correct reasoning sat on an unexamined premise. Nobody had asked
+whether the address was private.
+
+### 9. `THIRD-PARTY-NOTICES.md` did not actually carry the notices — **fixed**
+
+The file was a table of copyright lines and repository links, and it claimed to discharge the
+attribution obligation. It did not. MIT and BSD require the copyright notice **and the permission and
+warranty text** to accompany copies of the software; a statically linked Go binary is a copy, and a
+link is not an inclusion.
+
+Every licence text is now reproduced verbatim in `internal/licenses/`, embedded in the binary, and
+printable with `basa licenses` — so the notices travel with the artefact an operator actually
+downloads, not only with the source they never see.
+
+Two copyright lines in the old table were also wrong, both because they had been taken from a
+repository README rather than from the licence file: go-keyring was recorded as 2019 when its notice
+says **2016**, and wincred as 2018 when its notice says **2014**.
+
+One near-miss worth recording: a licence-file sweep anchored on `LICEN[CS]E*` reports `basecamp/cli` as
+having **no licence at all**, because it names its file `MIT-LICENSE`. Same silent-zero shape as the
+sweep failures above.
+
+*Raised by Copilot review on PR #3.*
+
+### 10. Two commit messages named columns the API withholds — **resolved: messages reworded**
+
+Three column names the API strips from every response — a seller-access token on deals, two
+signature-provider columns on contracts — appeared once each in commit messages, cited there because
+the tests assert their absence. No tracked file named them.
+
+Neither the names nor their absence is actionable to anyone without a token, so this was close to
+immaterial. It was fixed anyway, on the principle that a withheld column is withheld for a reason and
+its name should not be the one part that escapes. The messages now describe the columns by role.
+
+The disclosure paragraph below was the more serious half: it claimed this document had verified the
+absence of exactly the thing that had leaked. That wording is corrected.
+
+**A note on describing a leak while closing it.** The first draft of this finding named all three
+columns in order to explain which ones had leaked — reintroducing them into a tracked file, which
+publishes far more reliably than a commit message does. Writing up a disclosure is itself a disclosure
+surface.
+
+### 11. PR descriptions are a separate surface from repository files — **out of scope by decision**
+
+Findings 1–10 audit tracked files, commit messages, history, and the built binary. Pull-request bodies
+are none of those, and three of them referenced private-repository PR numbers and branch names.
+
+This is out of scope because of how publication is structured: only `Basa-Futura/basa-cli` becomes
+public. The pull requests reviewed here live in a private fork, so their bodies never publish — only
+the commits travel upstream, and those are swept above.
+
+**If that ever changes** — if the repository holding these PRs is itself made public — the bodies need
+re-reading first. The audit boundary is "what a public reader can fetch", and that boundary moves when
+the topology does.
+
+### 12. The notices list was complete only by hand — **fixed, and the generator fixed with it**
+
+`THIRD-PARTY-NOTICES.md` omitted `github.com/inconshreveable/mousetrap` (Apache-2.0) — the one module in
+`go.mod` with no licence text in `internal/licenses/`. It is Windows-only, reached through `cobra`, which
+uses it to detect being launched from Explorer rather than a shell.
+
+No released artefact was affected: `make build-all` ships darwin and linux, where it does not link, and
+nothing is vendored. But `licenses.go` and the notices page both state that platform-specific notices ride
+in *every* build precisely so a needed one is never missing — `wincred` is carried under that rule and this
+was not. Adding `windows/amd64` to the release matrix is a one-line change, and that day a published binary
+would have linked Apache-2.0 code with no notice accompanying it.
+
+**Why it was missed is the part worth keeping.** The recipe's first command — which components link, per
+platform — was correct: run it, and the windows pass names `mousetrap`. The table had been transcribed
+rather than regenerated, and one row of that pass was dropped.
+
+**Its second command was not correct, and this document said it was.** A Copilot review of this PR caught
+that *after* the notice had been added: the "exact versions" step filtered `go list -m all` through a
+`grep -E` alternation of the dependency names it expected, so the step documented for finding versions
+could not report the version of the entry just added to the table. Both commands now ask the build what
+links instead of naming what to look for, so neither carries a list that can go stale.
+
+Finding 9 fixed a notices file that claimed a completeness it did not have. This is the same defect twice
+more — once in the table, once in the instructions for rebuilding the table — and the second one was found
+by a reviewer reading the fix for the first. A hand-maintained list does not stop being one because the
+paragraph above it explains why hand-maintained lists fail.
+
+So the fix is not the missing file. `internal/licenses/licenses_test.go` compares the embedded set against
+`go.mod` and fails in both directions — a dependency with no notice, and a notice with no dependency — plus
+a length-and-warranty check, because an empty file would satisfy a set comparison while carrying nothing at
+all. All three failure shapes were confirmed by reintroducing them before the fix was believed, per the
+rule above.
+
+This is finding 8's lesson applied to a different generator. A fix that must hold for every future
+dependency cannot be a corrected list: correcting the list closes the finding and regresses on the next
+`go get`.
+
+## What publishing actually discloses
+
+Worth being concrete, since this is the decision being made:
+
+- The **shape** of `/api/v1`: five endpoints, their query parameters, their JSON field names.
+- Basa's deal-stage and contract-status vocabulary.
+- That access is gated on a per-user feature flag and a token ability, and that tokens expire.
+- That a private application repository exists.
+
+It does **not** disclose: any hostname, any credential, any customer or creator data, any business
+rule, any pricing or rate logic, or anything about infrastructure.
+
+**One qualification on schema, because the earlier wording of this paragraph was wrong.** It claimed no
+"database schema beyond field names the API already returns to authorised callers". Two commit messages
+named three columns the API deliberately **withholds** — a seller-access token on deals, and two
+signature-provider columns on contracts — named there precisely because the tests assert they are
+absent from every response. Three column names grant nobody anything, so the exposure was immaterial.
+The inaccurate claim was the problem: a boundary stated more tightly than it is true manufactures
+exactly the confidence this document exists to earn. Both the claim and the messages are now fixed —
+see finding 10.
+
+Reaching any of that requires a valid token **and** the `feature-api-tokens` flag on the account.
+Knowing the endpoint shape does not help an attacker without one — the same reason Basecamp, HEY, and
+Fizzy all ship public CLIs against non-public APIs.
+
+## Verdict
+
+Publishable. Findings 1, 2, 3, 4, 9, and 12 are resolved; 5, 6, 7, 8, and 10 are accepted with reasons
+recorded; 11 is out of scope while the public repository is `Basa-Futura/basa-cli` alone. Nothing in the
+code, the history, or the built binary is disqualifying, and the two substantive claims — read-only, and
+no client-side domain logic — hold up under direct inspection.
+
+**No action sits outside this repository any more.** The one that did was finding 8, which assumed a
+personal-domain address should not publish. That assumption was withdrawn on review: the address is
+public by choice, so the global `user.email` needs no correction and the existing history stands.
+
+**What would change this verdict:** a write verb reaching the client, a second hostname appearing in
+source, a dependency arriving under a copyleft licence, or the repository holding these pull requests
+being made public (finding 11). Each has a re-runnable command above; none is a judgement call.
+
+Two of those now fail a test rather than waiting for someone to re-run a command: a new dependency with
+no notice, and a notice with no dependency. The licence *kind* is still a human read — the test proves a
+dependency arrived, not that it arrived permissively.
