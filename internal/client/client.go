@@ -323,7 +323,7 @@ func (c *Client) get(ctx context.Context, path string, into any) error {
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 
-	if err := c.statusError(resp.StatusCode, body); err != nil {
+	if err := c.statusError(resp.StatusCode, resp.Header, body); err != nil {
 		return err
 	}
 
@@ -340,7 +340,7 @@ func (c *Client) get(ctx context.Context, path string, into any) error {
 
 // statusError maps HTTP status onto the CLI's exit-code contract. Each branch
 // tells the operator what to do, not what went wrong internally.
-func (c *Client) statusError(status int, body []byte) error {
+func (c *Client) statusError(status int, header http.Header, body []byte) error {
 	if status >= 200 && status < 300 {
 		return nil
 	}
@@ -366,7 +366,7 @@ func (c *Client) statusError(status int, body []byte) error {
 		return fail.NotFound("That does not exist, or you cannot see it.")
 
 	case http.StatusTooManyRequests:
-		return fail.RateLimited()
+		return fail.RateLimited(retryAfter(header, time.Now()))
 
 	case http.StatusUnprocessableEntity:
 		msg, _ := apiMessage(body)
@@ -381,6 +381,36 @@ func (c *Client) statusError(status int, body []byte) error {
 	}
 
 	return fail.Usagef("Unexpected response from the server (%d).", status)
+}
+
+// retryAfter reads RFC 9110's Retry-After, which is either a count of seconds
+// or an HTTP date. Laravel's throttle sends seconds; the date form is parsed
+// too, so a proxy or CDN in front of the API cannot make the CLI go quiet about
+// how long the wait is.
+//
+// now is a parameter rather than a call to time.Now so the date branch is
+// testable without sleeping. A zero return means "the server did not say" —
+// including a header that has already elapsed, which is no longer a wait.
+func retryAfter(header http.Header, now time.Time) time.Duration {
+	raw := strings.TrimSpace(header.Get("Retry-After"))
+	if raw == "" {
+		return 0
+	}
+
+	if secs, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		if secs <= 0 {
+			return 0
+		}
+		return time.Duration(secs) * time.Second
+	}
+
+	if when, err := http.ParseTime(raw); err == nil {
+		if wait := when.Sub(now); wait > 0 {
+			return wait
+		}
+	}
+
+	return 0
 }
 
 // apiMessage pulls Laravel's conventional `message` field, plus our `hint`.

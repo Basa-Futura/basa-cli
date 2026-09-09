@@ -75,6 +75,19 @@ func status(code int, body string) http.HandlerFunc {
 	}
 }
 
+// statusWithHeaders is status() for the cases where the header, not the body,
+// is the thing under test — Retry-After being the one that exists today.
+func statusWithHeaders(code int, headers map[string]string, body string) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		for k, v := range headers {
+			w.Header().Set(k, v)
+		}
+		w.WriteHeader(code)
+		_, _ = w.Write([]byte(body))
+	}
+}
+
 // --- happy path ------------------------------------------------------------
 
 func TestMeRendersATableForAHuman(t *testing.T) {
@@ -209,6 +222,91 @@ func TestRateLimitIsExplainedInPlainLanguage(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(stderr), "wait") {
 		t.Errorf("should tell the operator to wait, got:\n%s", stderr)
+	}
+}
+
+// The server says how long to wait. Saying "wait a minute" when it said 34
+// seconds is not wrong so much as useless: the operator cannot tell whether
+// they are 2 seconds or 2 minutes from being able to work again.
+func TestRateLimitNamesTheWaitTheServerAskedFor(t *testing.T) {
+	h := newHarness(t, statusWithHeaders(
+		http.StatusTooManyRequests,
+		map[string]string{"Retry-After": "34"},
+		`{}`,
+	))
+	t.Setenv(config.EnvVarToken, "42|t")
+
+	_, stderr, code := h.run("me", "--env", "local")
+
+	if code == 0 {
+		t.Fatal("rate limiting must not exit 0")
+	}
+	if !strings.Contains(stderr, "34 seconds") {
+		t.Errorf("should name the wait the server asked for, got:\n%s", stderr)
+	}
+}
+
+// Sixty seconds is a minute, and reads better as one.
+func TestRateLimitRendersAWholeMinuteAsMinutes(t *testing.T) {
+	h := newHarness(t, statusWithHeaders(
+		http.StatusTooManyRequests,
+		map[string]string{"Retry-After": "60"},
+		`{}`,
+	))
+	t.Setenv(config.EnvVarToken, "42|t")
+
+	_, stderr, _ := h.run("me", "--env", "local")
+
+	if !strings.Contains(stderr, "1 minute") {
+		t.Errorf("60 seconds should read as a minute, got:\n%s", stderr)
+	}
+}
+
+// No header, or a header nobody can parse, must not produce an invented number.
+func TestRateLimitStaysVagueWhenTheServerDoesNotSay(t *testing.T) {
+	for name, headers := range map[string]map[string]string{
+		"absent":      {},
+		"unparseable": {"Retry-After": "soon"},
+		"elapsed":     {"Retry-After": "Mon, 02 Jan 2006 15:04:05 GMT"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t, statusWithHeaders(http.StatusTooManyRequests, headers, `{}`))
+			t.Setenv(config.EnvVarToken, "42|t")
+
+			_, stderr, code := h.run("me", "--env", "local")
+
+			if code == 0 {
+				t.Fatal("rate limiting must not exit 0")
+			}
+			if !strings.Contains(stderr, "Wait a minute") {
+				t.Errorf("want the vague sentence, got:\n%s", stderr)
+			}
+		})
+	}
+}
+
+// A script backing off needs the wait on stdout, not just in the human text.
+func TestRateLimitWaitIsReadableInJSONMode(t *testing.T) {
+	h := newHarness(t, statusWithHeaders(
+		http.StatusTooManyRequests,
+		map[string]string{"Retry-After": "5"},
+		`{}`,
+	))
+	t.Setenv(config.EnvVarToken, "42|t")
+
+	stdout, _, _ := h.run("me", "--env", "local", "--json")
+
+	var payload struct {
+		Error struct {
+			Message string `json:"message"`
+			Hint    string `json:"hint"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(payload.Error.Hint, "5 seconds") {
+		t.Errorf("hint should carry the wait, got %q", payload.Error.Hint)
 	}
 }
 
