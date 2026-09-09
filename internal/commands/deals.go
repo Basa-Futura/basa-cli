@@ -260,6 +260,10 @@ func resolveTeam(ctx context.Context, deps *Deps, c *client.Client) (client.Team
 // matchTeams accepts an exact id, then an exact name, then a unique substring —
 // so an operator can type a memorable fragment instead of an integer, but a
 // fragment that could mean two teams is an error rather than a coin flip.
+//
+// The name pass returns every exact match, not the first. Two teams sharing a
+// name is a real shape, and resolveTeam turns a plural here into "be more
+// specific", with ids, rather than this function quietly choosing one.
 func matchTeams(teams []client.Team, want string) []client.Team {
 	if id, err := strconv.ParseInt(want, 10, 64); err == nil {
 		for _, t := range teams {
@@ -271,10 +275,14 @@ func matchTeams(teams []client.Team, want string) []client.Team {
 
 	needle := strings.ToLower(strings.TrimSpace(want))
 
+	var exact []client.Team
 	for _, t := range teams {
 		if strings.ToLower(t.Name) == needle {
-			return []client.Team{t}
+			exact = append(exact, t)
 		}
+	}
+	if len(exact) > 0 {
+		return exact
 	}
 
 	var partial []client.Team
