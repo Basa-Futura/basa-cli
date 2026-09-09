@@ -121,3 +121,49 @@ func TestLogoutReportsWhenTheTokenCouldNotBeRemoved(t *testing.T) {
 		t.Errorf("should say it could not remove the token, got:\n%s", stderr)
 	}
 }
+
+// corruptConfig replaces the harness's config.json with something that is not
+// JSON, so every command that loads configuration fails at that step.
+func corruptConfig(t *testing.T) {
+	t.Helper()
+	path := filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "basa", "config.json")
+	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+}
+
+// Configuration used to be loaded before Cobra dispatched anything, so a
+// malformed config.json took down `basa --help`, `basa version`, and — the one
+// with a legal job — `basa licenses`, none of which read it. Loading happens
+// only for commands that need it now.
+func TestCommandsThatNeedNoConfigSurviveABrokenOne(t *testing.T) {
+	h := newHarness(t, okHandler)
+	corruptConfig(t)
+
+	for _, args := range [][]string{{"--help"}, {"version"}, {"licenses"}} {
+		stdout, stderr, code := h.run(args...)
+		if code != 0 {
+			t.Errorf("basa %s: exit %d with a broken config:\n%s", strings.Join(args, " "), code, stderr)
+		}
+		if stdout == "" {
+			t.Errorf("basa %s: printed nothing", strings.Join(args, " "))
+		}
+	}
+}
+
+// A command that does need configuration still fails clearly — this guards
+// against over-correcting into swallowing the error.
+func TestACommandThatNeedsConfigStillReportsABrokenOne(t *testing.T) {
+	h := newHarness(t, okHandler)
+	corruptConfig(t)
+	t.Setenv(config.EnvVarToken, "42|t")
+
+	_, stderr, code := h.run("me", "--env", "local")
+
+	if code == 0 {
+		t.Fatal("a broken config must not let a config-dependent command exit 0")
+	}
+	if !strings.Contains(stderr, "configuration") {
+		t.Errorf("should name the configuration problem, got:\n%s", stderr)
+	}
+}

@@ -34,18 +34,13 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		teamFlag string
 	)
 
-	cfg, err := config.Load()
-	if err != nil {
-		fmt.Fprintln(stderr, "Could not read your basa configuration:", err)
-		return fail.CodeUsage
-	}
-
 	out := output.New(stdout, stderr, false)
-	deps := &commands.Deps{Config: cfg, Out: out}
+	deps := &commands.Deps{Out: out}
 
 	root := &cobra.Command{
-		Use:   "basa",
-		Short: "Look up Basa projects, deals, and contracts from the terminal",
+		Use:         "basa",
+		Annotations: noConfig(),
+		Short:       "Look up Basa projects, deals, and contracts from the terminal",
 		Long: `basa is a command-line client for Basa.
 
 It reads the same data you can see in the browser, as you, with the same
@@ -74,10 +69,30 @@ assumes production is one typo away from trouble.`,
 
 	// Flags are parsed before any RunE fires, so fold them into the shared deps
 	// at that point rather than threading them through every constructor.
-	root.PersistentPreRun = func(_ *cobra.Command, _ []string) {
+	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
 		out.JSON = asJSON
 		deps.EnvFlag = envFlag
 		deps.TeamFlag = teamFlag
+
+		// Configuration is read here, once a command is actually about to run,
+		// not before dispatch. Commands that never read it say so with an
+		// annotation where they are defined. That keeps a malformed config.json
+		// from taking down --help, version, and licenses — and keeps the
+		// credential store, whose constructor probes the keyring, from being
+		// built for them.
+		if cmd.Annotations[annotationNoConfig] != "" {
+			return nil
+		}
+
+		cfg, err := config.Load()
+		if err != nil {
+			return fail.UsageHintf(
+				"Fix the file in "+config.Dir()+", or move it aside and log in again.",
+				"Could not read your basa configuration: %v", err,
+			)
+		}
+		deps.Config = cfg
+		return nil
 	}
 
 	root.AddCommand(
@@ -112,9 +127,10 @@ assumes production is one typo away from trouble.`,
 // with the download, which is where the MIT and BSD obligations actually bite.
 func newLicensesCmd(stdout io.Writer) *cobra.Command {
 	return &cobra.Command{
-		Use:   "licenses",
-		Short: "Print third-party licence notices",
-		Args:  cobra.NoArgs,
+		Use:         "licenses",
+		Annotations: noConfig(),
+		Short:       "Print third-party licence notices",
+		Args:        cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return licenses.WriteTo(stdout)
 		},
@@ -123,13 +139,22 @@ func newLicensesCmd(stdout io.Writer) *cobra.Command {
 
 func newVersionCmd(stdout io.Writer) *cobra.Command {
 	return &cobra.Command{
-		Use:   "version",
-		Short: "Print the version",
+		Use:         "version",
+		Annotations: noConfig(),
+		Short:       "Print the version",
 		Run: func(_ *cobra.Command, _ []string) {
 			fmt.Fprintf(stdout, "basa %s (commit %s, built %s)\n", Version, Commit, Date)
 		},
 	}
 }
+
+// annotationNoConfig marks a command that never reads configuration, so the
+// PersistentPreRun skips loading it. Declared on the command rather than kept
+// as a list in Run: a new command that needs configuration gets it by default,
+// and one that does not says so where it is defined.
+const annotationNoConfig = "basa.config"
+
+func noConfig() map[string]string { return map[string]string{annotationNoConfig: "not-needed"} }
 
 // Main keeps cmd/basa/main.go trivial.
 func Main() {

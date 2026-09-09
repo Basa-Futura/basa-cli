@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/basecamp/cli/credstore"
 	"github.com/zalando/go-keyring"
@@ -45,8 +46,22 @@ type Environment struct {
 type Config struct {
 	Environments map[string]Environment `json:"environments"`
 
-	path  string
-	store *credstore.Store
+	path string
+
+	// The credential store is built on first use, never in Load. Its
+	// constructor probes the system keyring with a write and a delete, and Load
+	// runs for every command that reads configuration — so an eager store meant
+	// a BASA_TOKEN automation run, which never touches a stored credential,
+	// still wrote to the keychain on every invocation.
+	storeOpts credstore.StoreOptions
+	storeOnce sync.Once
+	store     *credstore.Store
+}
+
+// st returns the credential store, building it on first use.
+func (c *Config) st() *credstore.Store {
+	c.storeOnce.Do(func() { c.store = credstore.NewStore(c.storeOpts) })
+	return c.store
 }
 
 // Dir is the config directory, honouring XDG when it is set.
@@ -69,11 +84,11 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		Environments: map[string]Environment{},
 		path:         path,
-		store: credstore.NewStore(credstore.StoreOptions{
+		storeOpts: credstore.StoreOptions{
 			ServiceName:   serviceName,
 			DisableEnvVar: EnvVarNoKeyring,
 			FallbackDir:   dir,
-		}),
+		},
 	}
 
 	raw, err := os.ReadFile(path)
@@ -195,7 +210,7 @@ func (c *Config) Token(env string) (string, error) {
 		return strings.TrimSpace(t), nil
 	}
 
-	raw, err := c.store.Load(credKey(env))
+	raw, err := c.st().Load(credKey(env))
 	if err != nil || len(raw) == 0 {
 		return "", errors.New("no stored token")
 	}
@@ -222,7 +237,7 @@ func (c *Config) SaveToken(env, token string) error {
 		return err
 	}
 
-	return c.store.Save(credKey(env), raw)
+	return c.st().Save(credKey(env), raw)
 }
 
 // DeleteToken removes the stored token for an environment. Absent is success —
@@ -231,7 +246,7 @@ func (c *Config) SaveToken(env, token string) error {
 // rewritten, is a failure to report: "Removed" over a token still on disk is
 // the one thing logout must never say.
 func (c *Config) DeleteToken(env string) error {
-	err := c.store.Delete(credKey(env))
+	err := c.st().Delete(credKey(env))
 	if err == nil || errors.Is(err, keyring.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
@@ -239,8 +254,8 @@ func (c *Config) DeleteToken(env string) error {
 }
 
 // UsingKeyring reports whether the system keyring is in use.
-func (c *Config) UsingKeyring() bool { return c.store.UsingKeyring() }
+func (c *Config) UsingKeyring() bool { return c.st().UsingKeyring() }
 
 // FallbackWarning is non-empty when credentials landed in a file instead of the
 // keyring. The operator is told, because it changes where their token lives.
-func (c *Config) FallbackWarning() string { return c.store.FallbackWarning() }
+func (c *Config) FallbackWarning() string { return c.st().FallbackWarning() }
