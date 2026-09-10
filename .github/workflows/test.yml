@@ -1,16 +1,32 @@
 name: test
 
+# The same gate a laptop runs, on every push and every pull request.
+#
+# Each step is a Makefile target rather than a restatement of one, so CI and
+# `make check` cannot drift into disagreeing about what "passing" means — the
+# Makefile is the single definition, and this file only invokes it.
+#
+# A push to a branch that has an open pull request runs twice (push and
+# pull_request are different events on different refs, so concurrency cannot
+# fold them). That is the normal GitHub trade for tests on every push, taken on
+# purpose: a branch with no PR yet still gets tested.
 on:
   push:
-    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+# A newer push to the same ref supersedes an older run of it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -19,14 +35,14 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Formatting
-        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      # fmt-check + vet + test: the documented pre-commit gate.
+      - name: make check
+        run: make check
 
-      - name: Vet
-        run: go vet ./...
+      # Same tests under the race detector.
+      - name: make test-race
+        run: make test-race
 
-      - name: Test
-        run: go test ./... -count=1 -race
-
-      - name: Cross-compile
+      # Every release target must build, not only the runner's own.
+      - name: make build-all
         run: make build-all

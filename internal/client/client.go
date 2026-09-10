@@ -321,7 +321,13 @@ func (c *Client) get(ctx context.Context, path string, into any) error {
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		// A reply that is complete JSON but shorter than declared is a dropped
+		// connection, not an answer. Decoding what did arrive would report the
+		// first part of a result as the whole of one.
+		return fail.Wrap(fail.CodeUsage, "The connection was cut off before the server finished its reply — try again.", err)
+	}
 
 	if err := c.statusError(resp.StatusCode, resp.Header, body); err != nil {
 		return err

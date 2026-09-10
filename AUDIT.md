@@ -365,6 +365,25 @@ This is finding 8's lesson applied to a different generator. A fix that must hol
 dependency cannot be a corrected list: correcting the list closes the finding and regresses on the next
 `go get`.
 
+### 13. "Verbatim" was true of the text, not the file — **fixed, and pinned byte-for-byte**
+
+Eight of the nine embedded licence files carried a four-line header above the licence: the module
+path, its version, and a line saying the text below was a verbatim copy. The text below was. The file
+was not — and both `basa licenses` and this repository said "verbatim" of the file.
+
+A Copilot review surfaced this by claiming the opposite defect: that the Cobra text was *truncated*,
+missing Apache-2.0's "END OF TERMS AND CONDITIONS" and appendix. It is not. The pinned v1.10.2
+`LICENSE.txt` ends at §9 at 174 lines, and the embedded tail matches it exactly. But checking that
+claim meant diffing every file against the module cache, and that is what found the headers. A wrong
+finding that prompts the right check is still worth having.
+
+The headers are gone; every file is byte-identical to the licence its module ships, and
+`TestEveryNoticeIsVerbatim` compares each against the module cache and fails on any difference. The
+module and version the headers used to carry now come from the binary's own build information, which
+an upgrade cannot leave behind — for the modules linked into that build. A notice carried for another
+platform says so in place of a version, which is the truth about the artefact in hand. And the release asset is produced by running the built binary, so it
+and `basa licenses` cannot disagree.
+
 ## What publishing actually discloses
 
 Worth being concrete, since this is the decision being made:
@@ -392,7 +411,7 @@ Fizzy all ship public CLIs against non-public APIs.
 
 ## Verdict
 
-Publishable. Findings 1, 2, 3, 4, 9, and 12 are resolved; 5, 6, 7, 8, and 10 are accepted with reasons
+Publishable. Findings 1, 2, 3, 4, 9, 12, and 13 are resolved; 5, 6, 7, 8, and 10 are accepted with reasons
 recorded; 11 is out of scope while the public repository is `Basa-Futura/basa-cli` alone. Nothing in the
 code, the history, or the built binary is disqualifying, and the two substantive claims — read-only, and
 no client-side domain logic — hold up under direct inspection.
