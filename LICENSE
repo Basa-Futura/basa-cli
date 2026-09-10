@@ -1,0 +1,52 @@
+Copyright (c) 2026 Basa Futura. All rights reserved.
+
+PROPRIETARY — SOURCE-VISIBLE, NOT OPEN SOURCE
+
+This source code is published publicly so that the people who run this tool can
+read exactly what it does, verify it, and install it without authenticating to a
+private repository. Publication is for transparency and distribution only. It is
+not an open-source release and grants no open-source rights.
+
+1. NO GENERAL LICENSE
+
+   Except as stated in section 2, no license is granted. You may not use, copy,
+   modify, merge, publish, distribute, sublicense, sell, or create derivative
+   works from this software or its source code.
+
+   Viewing and forking within GitHub, to the extent GitHub's Terms of Service
+   permit it for any public repository, is not a license from Basa Futura and
+   confers no rights under this notice.
+
+2. PERMITTED USE
+
+   A person authorized by Basa Futura to access a Basa account may download,
+   install, and run the compiled program for the purpose of accessing that
+   account. That permission is limited to running the program as distributed,
+   ends when the authorization ends, and extends no further.
+
+3. CONTRIBUTIONS
+
+   Basa Futura is not accepting external contributions to this repository. Pull
+   requests from outside Basa Futura may be closed without review. Anything
+   submitted regardless is assigned to Basa Futura.
+
+4. NO WARRANTY
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL
+   BASA FUTURA BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN
+   AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN
+   CONNECTION WITH THE SOFTWARE OR ITS USE.
+
+5. THIRD-PARTY COMPONENTS
+
+   This program incorporates third-party open-source components under their own
+   permissive licenses (MIT, Apache-2.0, BSD). Those licenses govern those
+   components, not this notice, and none of them requires this software to be
+   released under an open-source license. See THIRD-PARTY-NOTICES.md.
+
+6. RESERVATION
+
+   Basa Futura reserves the right to relicense this software, including under an
+   open-source license, at any time. Until it does, this notice governs.
