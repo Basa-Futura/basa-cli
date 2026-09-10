@@ -52,6 +52,9 @@ history. Paste it at the prompt, or pipe it in.`,
 		Example: `  basa auth login --env staging --url https://staging.basa.example
   basa auth login --env staging --no-browser
   echo "$TOKEN" | basa auth login --env staging`,
+		// No positional arguments, and the refusal must not echo what was
+		// passed: the likeliest stray argument here is the token itself.
+		Args: refuseArgsWithoutEchoing(),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAuthLogin(cmd.Context(), deps, url, noBrowser)
 		},
@@ -177,6 +180,25 @@ func readToken(out *output.Writer) (string, error) {
 // Windows clipboard delivers.
 func normalizeToken(raw string) string {
 	return strings.TrimSpace(raw)
+}
+
+// refuseArgsWithoutEchoing rejects positional arguments to login without
+// repeating them. The help text promises the token is never taken from the
+// command line; Cobra's default silently accepted one there, which kept the
+// promise's letter while a token sat in shell history, and cobra.NoArgs would
+// refuse by printing the value back. Neither is acceptable for a credential, so
+// the message names the problem and the hint says the one useful thing: the
+// value is already in your history — revoke it and mint another.
+func refuseArgsWithoutEchoing() cobra.PositionalArgs {
+	return func(_ *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return nil
+		}
+		return fail.UsageHint(
+			"basa auth login takes no arguments — paste the token at the prompt, or pipe it in.",
+			"If that was a token, it is now in your shell history: revoke it in Basa under API Tokens and run login again to mint a new one.",
+		)
+	}
 }
 
 // pairURL is the browser consent screen for an environment. The path is fixed
