@@ -150,8 +150,7 @@ gbHJd  Outreach sent       Outreach     Jordan Lee    Lead Creator  —         
 Three things about that layout. When every deal on the page belongs to one project, the project and
 brand are said once in the heading rather than repeated down two columns — the columns come back the
 moment a second project appears. Rows sharing a status sit together, the group touched most recently
-first, so a block of thirty parked deals reads as a block rather than being interleaved with live o| `--all` | Every page, not just the first. Cannot be combined with `--limit` |
-nes.
+first, so a block of thirty parked deals reads as a block rather than being interleaved with live ones.
 And the tally line above the table gives the shape of the list before the rows do. Heading and tally
 go to stderr with the other context, so a pipeline never sees them.
 
@@ -164,6 +163,7 @@ when you want the answer a colleague sees in the browser.
 | `--stage` | `outreach`, `negotiation`, `contracting`, `execution` |
 | `--project` | Only this project (a project id) |
 | `--limit`, `-n` | How many to show, 1–100 (default 25) |
+| `--all` | Every page, not just the first. Cannot be combined with `--limit` |
 
 ```bash
 basa deals list -e staging --stage contracting

@@ -227,6 +227,14 @@ func groupByStatus(deals []client.Deal) []statusGroup {
 	return groups
 }
 
+// updatedTime reads a deal's updated_at for ordering. An unreadable or absent
+// timestamp sorts as the zero time, which puts its group last — the honest
+// place for "we do not know when this moved".
+//
+// RFC3339 is the only layout needed, including for fractional seconds: when
+// parsing, Go accepts a fractional second immediately after the seconds field
+// even though the layout does not mention one. A test pins that, because it
+// reads like a gap and is not one.
 func updatedTime(d client.Deal) time.Time {
 	if d.UpdatedAt == nil {
 		return time.Time{}

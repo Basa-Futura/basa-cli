@@ -214,3 +214,31 @@ func TestDealsListAllAndLimitIsAUsageError(t *testing.T) {
 		t.Errorf("should name both flags:\n%s", stderr)
 	}
 }
+
+// Ordering must survive fractional seconds. Go's time.Parse accepts a
+// fractional second immediately after the seconds field even when the layout
+// omits it, so RFC3339 is enough — this pins it rather than leaving the next
+// reader to re-derive it. The API sends whole seconds today; a server that
+// started sending tenths would not silently flatten this ordering to zero
+// times.
+func TestDealsListOrdersCorrectlyWithFractionalSecondTimestamps(t *testing.T) {
+	body := dealsPage([]string{
+		dealJSON("older", "inactive", "On Hold", "Spring Campaign", "Acme", "A", "2026-05-29T18:44:39.123456+00:00"),
+		dealJSON("newer", "outreach_assigned", "Ready to Send", "Spring Campaign", "Acme", "B", "2026-07-14T18:36:52.5+00:00"),
+	}, 1, 1, 2)
+	h := newHarness(t, apiFor(meWith("Acme Agency"), body, nil))
+	t.Setenv(config.EnvVarToken, "42|t")
+
+	stdout, stderr, code := h.run("deals", "list", "--env", "local")
+
+	if code != 0 {
+		t.Fatalf("exit %d:\n%s", code, stderr)
+	}
+	newer, older := strings.Index(stdout, "newer"), strings.Index(stdout, "older")
+	if newer < 0 || older < 0 {
+		t.Fatalf("both rows should render:\n%s", stdout)
+	}
+	if newer > older {
+		t.Errorf("the group touched in July must precede the one touched in May:\n%s", stdout)
+	}
+}
