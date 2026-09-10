@@ -133,6 +133,9 @@ type DealFilters struct {
 	Stage   string
 	Project string
 	Limit   int
+	// Page is the paginator page to fetch. Zero means the server's first, and
+	// only the page-walking helpers ever set it.
+	Page int
 }
 
 func (f DealFilters) query() url.Values {
@@ -142,6 +145,9 @@ func (f DealFilters) query() url.Values {
 	}
 	if f.Project != "" {
 		q.Set("project", f.Project)
+	}
+	if f.Page > 0 {
+		q.Set("page", strconv.Itoa(f.Page))
 	}
 	// != 0 rather than > 0: the flag's zero value means "unset, let the server
 	// choose", but a negative value is the operator asking for something
@@ -172,6 +178,89 @@ func (c *Client) DealsRaw(ctx context.Context, teamID int64, filters DealFilters
 		return nil, err
 	}
 	return raw, nil
+}
+
+// maxPageSize is the largest page the server will serve. Restated here for the
+// same reason the --limit help text restates it: --all should cost a team with
+// many deals as few requests as possible against the rate limit, and the
+// server rejects anything larger with a 422 the client surfaces, so a wrong
+// number here fails loudly rather than silently.
+const maxPageSize = 100
+
+// eachDealsPage fetches every page of a listing in order and hands each raw
+// body to visit. The first page's paginator metadata decides how many follow.
+func (c *Client) eachDealsPage(ctx context.Context, teamID int64, filters DealFilters, visit func(body []byte) error) error {
+	filters.Limit = maxPageSize
+	for page := 1; ; page++ {
+		filters.Page = page
+
+		var raw json.RawMessage
+		if err := c.get(ctx, c.dealsPath(teamID, filters), &raw); err != nil {
+			return err
+		}
+		var envelope struct {
+			Meta PageMeta `json:"meta"`
+		}
+		if err := json.Unmarshal(raw, &envelope); err != nil {
+			return fail.Wrap(fail.CodeUsage, "The server sent a response this version of basa could not read.", err)
+		}
+		if err := visit(raw); err != nil {
+			return err
+		}
+		if page >= envelope.Meta.LastPage {
+			return nil
+		}
+	}
+}
+
+// DealsAll returns every deal the filters match, across all pages. The
+// paginator metadata is rewritten to describe the combined result, because
+// that is what the caller is now holding.
+func (c *Client) DealsAll(ctx context.Context, teamID int64, filters DealFilters) (*DealPage, error) {
+	all := &DealPage{Deals: []Deal{}}
+	err := c.eachDealsPage(ctx, teamID, filters, func(body []byte) error {
+		var envelope struct {
+			Data []Deal `json:"data"`
+		}
+		if err := json.Unmarshal(body, &envelope); err != nil {
+			return fail.Wrap(fail.CodeUsage, "The server sent a response this version of basa could not read.", err)
+		}
+		all.Deals = append(all.Deals, envelope.Data...)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	all.Meta = PageMeta{CurrentPage: 1, LastPage: 1, PerPage: len(all.Deals), Total: len(all.Deals)}
+	return all, nil
+}
+
+// DealsAllRaw is DealsAll for --json: every page's items spliced into one
+// envelope, each item byte-for-byte as the server sent it, so a field this
+// version knows nothing about still reaches the caller.
+func (c *Client) DealsAllRaw(ctx context.Context, teamID int64, filters DealFilters) (json.RawMessage, error) {
+	items := []json.RawMessage{}
+	err := c.eachDealsPage(ctx, teamID, filters, func(body []byte) error {
+		var envelope struct {
+			Data []json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal(body, &envelope); err != nil {
+			return fail.Wrap(fail.CodeUsage, "The server sent a response this version of basa could not read.", err)
+		}
+		items = append(items, envelope.Data...)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	out, err := json.Marshal(struct {
+		Data []json.RawMessage `json:"data"`
+		Meta PageMeta          `json:"meta"`
+	}{items, PageMeta{CurrentPage: 1, LastPage: 1, PerPage: len(items), Total: len(items)}})
+	if err != nil {
+		return nil, fail.Wrap(fail.CodeUsage, "Could not assemble the combined listing.", err)
+	}
+	return out, nil
 }
 
 func (c *Client) Deal(ctx context.Context, teamID int64, id string) (*Deal, error) {
