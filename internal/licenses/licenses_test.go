@@ -255,7 +255,12 @@ func licenceFileIn(t *testing.T, dir string) ([]byte, string) {
 // has no version here, and the notice carried for it says so instead. The
 // expected split therefore depends on runtime.GOOS.
 func TestBuiltBinaryReportsLinkedVersions(t *testing.T) {
+	// -o writes exactly the name it is given, so the suffix is for Windows at
+	// exec time, where an executable without .exe is the unconventional thing.
 	bin := filepath.Join(t.TempDir(), "basa")
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
 	if out, err := exec.Command("go", "build", "-o", bin, "../../cmd/basa").CombinedOutput(); err != nil {
 		t.Fatalf("go build: %v\n%s", err, out)
 	}
@@ -283,8 +288,9 @@ func TestBuiltBinaryReportsLinkedVersions(t *testing.T) {
 	wantNotes := 0
 	for mod, goos := range platformOnly {
 		linked := goos == runtime.GOOS
-		if linked != strings.Contains(text, "\n"+mod+" v") {
-			t.Errorf("%s: linked-on-%s=%v but version line present=%v", mod, runtime.GOOS, linked, !linked)
+		present := strings.Contains(text, "\n"+mod+" v")
+		if linked != present {
+			t.Errorf("%s: linked on %s=%v, version line present=%v", mod, runtime.GOOS, linked, present)
 		}
 		if !linked {
 			wantNotes++
