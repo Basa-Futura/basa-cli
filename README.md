@@ -140,11 +140,19 @@ every result, so you can always see which one you are looking at.
 
 ```
 $ basa deals list -e staging
-staging · Acme Agency
-ID     STAGE        STATUS               PROJECT          BRAND      COUNTERPARTY  UPDATED
-EfhxL  Contracting  Awaiting signature   Spring Campaign  Northwind  Sam Rivera    2026-08-19
-gbHJd  Outreach     Outreach sent        Spring Campaign  Northwind  Jordan Lee    2026-08-19
+staging · Acme Agency · Spring Campaign (Northwind)
+2 deals · 1 Awaiting signature · 1 Outreach sent
+ID     STATUS              STAGE        COUNTERPARTY  ROLE          ASSIGNED   UPDATED
+EfhxL  Awaiting signature  Contracting  Sam Rivera    Lead Creator  Dana Reed  2026-08-19
+gbHJd  Outreach sent       Outreach     Jordan Lee    Lead Creator  —          2026-08-19
 ```
+
+Three things about that layout. When every deal on the page belongs to one project, the project and
+brand are said once in the heading rather than repeated down two columns — the columns come back the
+moment a second project appears. Rows sharing a status sit together, the group touched most recently
+first, so a block of thirty parked deals reads as a block rather than being interleaved with live ones.
+And the tally line above the table gives the shape of the list before the rows do. Heading and tally
+go to stderr with the other context, so a pipeline never sees them.
 
 **`STAGE` and `STATUS` are different things.** Stage is the coarse pipeline position and is what
 `--stage` filters on. Status is the finer lifecycle the Basa web app shows, so it is the column to read
@@ -155,13 +163,15 @@ when you want the answer a colleague sees in the browser.
 | `--stage` | `outreach`, `negotiation`, `contracting`, `execution` |
 | `--project` | Only this project (a project id) |
 | `--limit`, `-n` | How many to show, 1–100 (default 25) |
+| `--all` | Every page, not just the first. Cannot be combined with `--limit` |
 
 ```bash
 basa deals list -e staging --stage contracting
 basa deals show EfhxL -e staging
 ```
 
-If more deals match than are shown, it says so — a partial list is never left looking complete.
+If more deals match than are shown, it says so — a partial list is never left looking complete — and
+`--all` fetches the rest, walking every page at the server's largest page size.
 
 ### Contracts
 

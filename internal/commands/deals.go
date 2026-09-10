@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -39,6 +41,7 @@ func newDealsListCmd(deps *Deps) *cobra.Command {
 		stage   string
 		project string
 		limit   int
+		all     bool
 	)
 
 	cmd := &cobra.Command{
@@ -50,18 +53,26 @@ func newDealsListCmd(deps *Deps) *cobra.Command {
 				Stage:   stage,
 				Project: project,
 				Limit:   limit,
-			})
+			}, all)
 		},
 	}
 
 	cmd.Flags().StringVar(&stage, "stage", "", "Only this stage (outreach, negotiation, contracting, execution)")
 	cmd.Flags().StringVar(&project, "project", "", "Only this project (a project id)")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "How many to show (1-100, default 25)")
+	cmd.Flags().BoolVar(&all, "all", false, "Every page, not just the first (cannot be combined with --limit)")
 
 	return cmd
 }
 
-func runDealsList(ctx context.Context, deps *Deps, filters client.DealFilters) error {
+func runDealsList(ctx context.Context, deps *Deps, filters client.DealFilters, all bool) error {
+	if all && filters.Limit != 0 {
+		return fail.UsageHint(
+			"--all fetches every page at the server's largest page size, so --limit has nothing left to set.",
+			"Pass one or the other.",
+		)
+	}
+
 	c, env, err := clientFor(deps)
 	if err != nil {
 		return err
@@ -73,21 +84,39 @@ func runDealsList(ctx context.Context, deps *Deps, filters client.DealFilters) e
 	}
 
 	if deps.Out.JSON {
-		raw, err := c.DealsRaw(ctx, team.ID, filters)
+		fetch := c.DealsRaw
+		if all {
+			fetch = c.DealsAllRaw
+		}
+		raw, err := fetch(ctx, team.ID, filters)
 		if err != nil {
 			return err
 		}
 		return deps.Out.Data(raw, nil)
 	}
 
-	page, err := c.Deals(ctx, team.ID, filters)
+	fetch := c.Deals
+	if all {
+		fetch = c.DealsAll
+	}
+	page, err := fetch(ctx, team.ID, filters)
 	if err != nil {
 		return err
 	}
 
 	// The operator should always know which system and which team they are
 	// looking at, and that belongs on stderr so it cannot corrupt a pipeline.
-	deps.Out.Notice("%s · %s", env, team.Name)
+	// When every deal on the page belongs to one project, that is said here
+	// too — once, instead of on every row of the table below.
+	heading := env + " · " + team.Name
+	project, brand, oneProject := uniformProject(page.Deals)
+	if oneProject {
+		heading += " · " + project
+		if brand != "" {
+			heading += " (" + brand + ")"
+		}
+	}
+	deps.Out.Notice("%s", heading)
 
 	if len(page.Deals) == 0 {
 		deps.Out.Notice("No deals matched.")
@@ -95,36 +124,145 @@ func runDealsList(ctx context.Context, deps *Deps, filters client.DealFilters) e
 		return nil
 	}
 
+	groups := groupByStatus(page.Deals)
+	if len(groups) > 1 {
+		deps.Out.Notice("%s", tally(groups, len(page.Deals)))
+	}
+
+	headers := []string{"ID", "STATUS", "STAGE"}
+	if !oneProject {
+		headers = append(headers, "PROJECT", "BRAND")
+	}
+	headers = append(headers, "COUNTERPARTY", "ROLE", "ASSIGNED", "UPDATED")
+
 	rows := make([][]string, 0, len(page.Deals))
-	for _, deal := range page.Deals {
-		rows = append(rows, []string{
-			deal.ID,
-			dealStage(deal),
-			dealStatus(deal),
-			dealProject(deal),
-			dealBrand(deal),
-			dealCounterparty(deal),
-			shortDate(deal.UpdatedAt),
-		})
+	for _, g := range groups {
+		for _, deal := range g.deals {
+			row := []string{deal.ID, dealStatus(deal), dealStage(deal)}
+			if !oneProject {
+				row = append(row, dealProject(deal), dealBrand(deal))
+			}
+			rows = append(rows, append(row,
+				dealCounterparty(deal),
+				valueOr(deal.Role != nil, func() string { return deal.Role.Name }),
+				derefOr(deal.AssignedTo, "—"),
+				shortDate(deal.UpdatedAt),
+			))
+		}
 	}
 
 	if err := deps.Out.Data(nil, func(io.Writer) error {
-		return deps.Out.Table(output.Table{
-			Headers: []string{"ID", "STAGE", "STATUS", "PROJECT", "BRAND", "COUNTERPARTY", "UPDATED"},
-			Rows:    rows,
-		})
+		return deps.Out.Table(output.Table{Headers: headers, Rows: rows})
 	}); err != nil {
 		return err
 	}
 
 	// Say so when there is more than they are seeing. Silently truncating a
 	// list reads as "this is everything", which for a status report is worse
-	// than showing nothing.
-	if page.Meta.Total > len(page.Deals) {
-		deps.Out.Notice("Showing %d of %d. Use --limit to see more.", len(page.Deals), page.Meta.Total)
+	// than showing nothing. --all has already fetched everything.
+	if !all && page.Meta.Total > len(page.Deals) {
+		deps.Out.Notice("Showing %d of %d. Use --limit to see more, or --all for everything.", len(page.Deals), page.Meta.Total)
 	}
 
 	return nil
+}
+
+// uniformProject reports the one project every deal belongs to, with its brand,
+// when there is exactly one — matched on id, displayed by name. The brand is
+// blank if the deals disagree about it, which should not happen for one project
+// but costs nothing to tolerate.
+func uniformProject(deals []client.Deal) (project, brand string, ok bool) {
+	if len(deals) == 0 || deals[0].Project == nil {
+		return "", "", false
+	}
+	first := deals[0]
+	project, brand = first.Project.Name, dealBrand(first)
+	for _, d := range deals[1:] {
+		if d.Project == nil || d.Project.ID != first.Project.ID {
+			return "", "", false
+		}
+		if dealBrand(d) != brand {
+			brand = ""
+		}
+	}
+	if brand == "—" {
+		brand = ""
+	}
+	return project, brand, true
+}
+
+// statusGroup is the deals sharing one status label, and when any of them was
+// last touched.
+type statusGroup struct {
+	label  string
+	latest time.Time
+	deals  []client.Deal
+}
+
+// groupByStatus orders deals so those sharing a status sit together, the group
+// touched most recently first, and the server's order kept within each group.
+//
+// This is presentation, not judgement. The client does not know that "On Hold"
+// matters less than "Ready to Send" — deciding what a status means is the
+// server's job and stays there. It knows only that thirty rows with one label
+// read better as a block than interleaved, and that a block nobody has touched
+// since May belongs below one touched this morning.
+func groupByStatus(deals []client.Deal) []statusGroup {
+	var groups []statusGroup
+	index := map[string]int{}
+	for _, d := range deals {
+		label := dealStatus(d)
+		i, seen := index[label]
+		if !seen {
+			i = len(groups)
+			index[label] = i
+			groups = append(groups, statusGroup{label: label})
+		}
+		groups[i].deals = append(groups[i].deals, d)
+		if t := updatedTime(d); t.After(groups[i].latest) {
+			groups[i].latest = t
+		}
+	}
+	sort.SliceStable(groups, func(a, b int) bool { return groups[a].latest.After(groups[b].latest) })
+	return groups
+}
+
+// updatedTime reads a deal's updated_at for ordering. An unreadable or absent
+// timestamp sorts as the zero time, which puts its group last — the honest
+// place for "we do not know when this moved".
+//
+// RFC3339 is the only layout needed, including for fractional seconds: when
+// parsing, Go accepts a fractional second immediately after the seconds field
+// even though the layout does not mention one. A test pins that, because it
+// reads like a gap and is not one.
+func updatedTime(d client.Deal) time.Time {
+	if d.UpdatedAt == nil {
+		return time.Time{}
+	}
+	t, err := time.Parse(time.RFC3339, *d.UpdatedAt)
+	if err != nil {
+		return time.Time{}
+	}
+	return t
+}
+
+// tally is the shape of the list in one line — "47 deals · 30 On Hold · 8
+// Completed …" — in the same order as the table below it, so the two agree. It
+// goes on stderr with the rest of the context: a table cannot say "thirty of
+// these are parked", and that is the headline.
+func tally(groups []statusGroup, total int) string {
+	parts := []string{fmt.Sprintf("%d %s", total, nounCount(total, "deal"))}
+	for _, g := range groups {
+		parts = append(parts, fmt.Sprintf("%d %s", len(g.deals), g.label))
+	}
+	return strings.Join(parts, " · ")
+}
+
+func nounCount(n int, noun string) string {
+	if n == 1 {
+		return noun
+	}
+	return noun + "s"
 }
 
 func newDealsShowCmd(deps *Deps) *cobra.Command {

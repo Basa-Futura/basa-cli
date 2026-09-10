@@ -68,11 +68,16 @@ func TestDealsListRendersATable(t *testing.T) {
 	// table that dropped one of them would fail here rather than look plausible.
 	for _, want := range []string{
 		"ID", "STAGE", "STATUS", "K3mQz", "Contracting", "Awaiting signature",
-		"Spring Campaign", "Acme", "Jordan Lee",
+		"Jordan Lee", "Lead Creator", "Dana Reed",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("table is missing %q\n--- stdout ---\n%s", want, stdout)
 		}
+	}
+	// One deal is one project, so the project and brand are said once, in the
+	// heading on stderr, and are not columns — see the readability tests.
+	if !strings.Contains(stderr, "Spring Campaign (Acme)") {
+		t.Errorf("heading should name the one project and brand, got:\n%s", stderr)
 	}
 	// The date is trimmed to the day — a COO scanning a list wants the day.
 	if !strings.Contains(stdout, "2026-08-18") || strings.Contains(stdout, "09:30:00") {
