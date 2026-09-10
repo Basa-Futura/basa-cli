@@ -87,13 +87,14 @@ latest_version() {
   code="${response%% *}"
   url="${response#* }"
 
-  # 404 is a repository that does not exist, or a private one seen without
-  # credentials. It is NOT what a public repository with no releases returns —
-  # see below — so this branch alone never caught the "nothing published yet"
-  # case, and the first public install attempt went looking for "vreleases".
+  # 404 means the repository itself is not visible: it does not exist, or it is
+  # private and this request carries no credentials. It is NOT what a public
+  # repository with no releases returns — see the tag check below — so this
+  # branch never caught the "nothing published yet" case, and saying so here was
+  # the reason the first public install went looking for "vreleases".
   if [ "$code" = "404" ]; then
-    fail "No published release found for ${REPO}." \
-         "The repository may be private, or may not exist. Build from source instead: https://github.com/${REPO}/blob/main/docs/INSTALL.md"
+    fail "Cannot see ${REPO} on GitHub." \
+         "It may be private, or the name may be wrong. If you have access, build from source instead: https://github.com/${REPO}/blob/main/docs/INSTALL.md"
   fi
 
   if [ "$code" != "200" ]; then
