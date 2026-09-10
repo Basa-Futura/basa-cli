@@ -197,11 +197,14 @@ func TestWriteToEmitsEveryNotice(t *testing.T) {
 // them handy to read and slightly untrue to the claim that they are verbatim.
 // The module and version now come from build information instead.
 //
-// This is the one test in the package that needs the go tool: identity can only
-// be checked against the source, and `go list -m` is how the source is found.
-// go test already needs the module cache to compile, so nothing new is asked —
-// and there is deliberately no skip. A guard that steps aside when it cannot
-// look is the silent zero this package exists to prevent.
+// This test needs the go tool and, on a cold cache, the network: identity can
+// only be checked against the source, and `go list -m` is how the source is
+// found. Compiling does not guarantee the source is there — a module no build
+// on this platform links, wincred on Linux, is never downloaded by a build — so
+// the test asks for it explicitly first. CI found that on its first run, after
+// a laptop whose cache happened to be warm had passed it. There is deliberately
+// no skip: a guard that steps aside when it cannot look is the silent zero this
+// package exists to prevent.
 func TestEveryNoticeIsVerbatim(t *testing.T) {
 	for _, mod := range requiredModules(t) {
 		name := noticeFile(mod)
@@ -221,6 +224,11 @@ func TestEveryNoticeIsVerbatim(t *testing.T) {
 
 func moduleDir(t *testing.T, mod string) string {
 	t.Helper()
+	// Not in the cache until something asks for it; `go list -m` reports an
+	// empty Dir rather than fetching, so ask first.
+	if out, err := exec.Command("go", "mod", "download", mod).CombinedOutput(); err != nil {
+		t.Fatalf("go mod download %s: %v\n%s", mod, err, out)
+	}
 	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", mod).Output()
 	if err != nil {
 		t.Fatalf("go list -m %s: %v", mod, err)
