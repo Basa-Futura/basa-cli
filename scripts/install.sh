@@ -87,9 +87,14 @@ latest_version() {
   code="${response%% *}"
   url="${response#* }"
 
+  # 404 means the repository itself is not visible: it does not exist, or it is
+  # private and this request carries no credentials. It is NOT what a public
+  # repository with no releases returns — see the tag check below — so this
+  # branch never caught the "nothing published yet" case, and saying so here was
+  # the reason the first public install went looking for "vreleases".
   if [ "$code" = "404" ]; then
-    fail "No published release found for ${REPO}." \
-         "The repository may be private, or may have no releases yet. Build from source instead: https://github.com/${REPO}/blob/main/docs/INSTALL.md"
+    fail "Cannot see ${REPO} on GitHub." \
+         "It may be private, or the name may be wrong. If you have access, build from source instead: https://github.com/${REPO}/blob/main/docs/INSTALL.md"
   fi
 
   if [ "$code" != "200" ]; then
@@ -98,9 +103,17 @@ latest_version() {
   fi
 
   tag="${url##*/}"
-  if [ -z "$tag" ] || [ "$tag" = "latest" ]; then
-    fail "Could not read a version tag from ${url}."
-  fi
+
+  # A repository with no releases answers /releases/latest with a redirect to
+  # the releases index — a 200 whose last path segment is "releases", not a
+  # tag. So the shape of the tag is the test, not the status code: anything
+  # that is not v<digits> means there is nothing to install yet, and saying so
+  # beats building a download URL out of whatever word GitHub landed on.
+  case "$tag" in
+    v[0-9]*) ;;
+    *) fail "No release has been published for ${REPO} yet." \
+            "Once one exists this command will find it. Until then, build from source: https://github.com/${REPO}/blob/main/docs/INSTALL.md" ;;
+  esac
 
   printf '%s' "${tag#v}"
 }
