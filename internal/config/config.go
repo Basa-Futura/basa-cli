@@ -91,6 +91,12 @@ func Load() (*Config, error) {
 		},
 	}
 
+	// #nosec G304 -- not caller-supplied. path is filepath.Join(Dir(), "config.json"):
+	// a constant filename under a directory derived from XDG_CONFIG_HOME, else the
+	// user's home. Nothing outside this process contributes to it, the read happens
+	// with the invoking user's own permissions, and anyone able to set this
+	// process's environment can already run any binary as that user -- or set
+	// BASA_TOKEN, which bypasses this file entirely.
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return cfg, nil
