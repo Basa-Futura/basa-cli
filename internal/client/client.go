@@ -429,16 +429,28 @@ type ProjectFilters struct {
 	// "true" is archived only, "all" is both. A bool cannot say three things,
 	// and the server already owns the message for anything else ("archived
 	// must be one of: true, false, all.").
-	Archived string
+	//
+	// It is a POINTER so that "the flag was not given" and "the flag was given
+	// an empty value" stay distinguishable. They are not the same request: the
+	// first is the server's active-only default, while `--archived=` — which a
+	// shell writes whenever an interpolated variable is empty — is an operator
+	// asking for something invalid, and the server answers it with a 422 naming
+	// the valid values. Collapsing the two returned an active-only page and
+	// looked like success. Same defect the Limit field's != 0 comment describes.
+	Archived *string
 	Search   string
 	Limit    int
 }
 
 func (f ProjectFilters) query() url.Values {
 	q := url.Values{}
-	if f.Archived != "" {
-		q.Set("archived", f.Archived)
+	if f.Archived != nil {
+		q.Set("archived", *f.Archived)
 	}
+	// Search stays a plain string: unlike archived, an empty value and an
+	// absent one are the same request. `search=` passes the server's
+	// `max:255` rule and filters nothing, which is exactly what omitting it
+	// does, so there is no message being swallowed here and nothing to carry.
 	if f.Search != "" {
 		q.Set("search", f.Search)
 	}

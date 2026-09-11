@@ -47,11 +47,16 @@ func newProjectsListCmd(deps *Deps) *cobra.Command {
 		Short: "List the team's projects",
 		Args:  rejectStrayArgs("projects list", "projects show <id>"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runProjectsList(cmd.Context(), deps, client.ProjectFilters{
-				Archived: archived,
-				Search:   search,
-				Limit:    limit,
-			})
+			filters := client.ProjectFilters{Search: search, Limit: limit}
+			// Whether the operator typed --archived at all, not whether what
+			// they typed was non-empty. An empty value has to reach the server
+			// so its own message answers it, rather than being folded into the
+			// active-only default and reported as a successful listing.
+			if cmd.Flags().Changed("archived") {
+				filters.Archived = &archived
+			}
+
+			return runProjectsList(cmd.Context(), deps, filters)
 		},
 	}
 

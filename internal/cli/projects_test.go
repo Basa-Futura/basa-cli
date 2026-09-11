@@ -3,6 +3,7 @@ package cli_test
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -226,6 +227,55 @@ func TestProjectsListForwardsAnUnknownArchivedValue(t *testing.T) {
 
 	if !strings.Contains(query, "archived=maybe") {
 		t.Errorf("archived=maybe should reach the server, got query %q", query)
+	}
+}
+
+// `--archived=` is not the same request as omitting --archived. A shell writes
+// the empty form whenever an interpolated variable is unset, and the server
+// answers it with a 422 naming the valid values -- so dropping it here would
+// return an active-only page and report it as success. Copilot caught this on
+// PR #1; it is the same defect the --limit forwarding comment describes.
+func TestProjectsListForwardsAnExplicitlyEmptyArchived(t *testing.T) {
+	var query string
+	h := newHarness(t, projectsAPI(meWith("Acme Agency"), projectsBody, &query))
+	t.Setenv(config.EnvVarToken, "42|token")
+
+	_, _, code := h.run("projects", "list", "--env", "local", "--archived", "")
+
+	if code != 0 {
+		t.Fatalf("exit %d, want 0", code)
+	}
+	parsed, err := url.ParseQuery(query)
+	if err != nil {
+		t.Fatalf("parse query %q: %v", query, err)
+	}
+	values, present := parsed["archived"]
+	if !present {
+		t.Fatalf("archived should still be sent when given an empty value, query was %q", query)
+	}
+	if len(values) != 1 || values[0] != "" {
+		t.Errorf("archived should be sent empty, got %#v", values)
+	}
+}
+
+// And omitting the flag must NOT send the parameter, or every default listing
+// would carry one the operator never asked for.
+func TestProjectsListOmitsArchivedWhenTheFlagIsAbsent(t *testing.T) {
+	var query string
+	h := newHarness(t, projectsAPI(meWith("Acme Agency"), projectsBody, &query))
+	t.Setenv(config.EnvVarToken, "42|token")
+
+	_, _, code := h.run("projects", "list", "--env", "local")
+
+	if code != 0 {
+		t.Fatalf("exit %d, want 0", code)
+	}
+	parsed, err := url.ParseQuery(query)
+	if err != nil {
+		t.Fatalf("parse query %q: %v", query, err)
+	}
+	if _, present := parsed["archived"]; present {
+		t.Errorf("archived should be absent when the flag is not given, query was %q", query)
 	}
 }
 

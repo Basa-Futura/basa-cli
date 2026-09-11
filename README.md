@@ -143,7 +143,7 @@ every result, so you can always see which one you are looking at.
 A project is one campaign: a brand, a set of roles, and the deals run under it.
 
 ```
-$ basa projects list -e staging
+$ basa projects list -e staging --archived all
 staging · Acme Agency
 ID                                    NAME             BRAND              TYPE       NDA  ARCHIVED  UPDATED
 9f2c0001-2222-3333-4444-555566667701  Autumn Launch    Northwind Trading  social     yes  no        2026-08-19
