@@ -43,6 +43,11 @@ jobs:
       - name: make test-race
         run: make test-race
 
+      # Static security analysis. Its findings otherwise surface only from code
+      # scanning on main, i.e. after merge.
+      - name: make security
+        run: make security
+
       # Every release target must build, not only the runner's own.
       - name: make build-all
         run: make build-all
