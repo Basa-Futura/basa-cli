@@ -94,6 +94,8 @@ Run `basa` on its own at any time to see the available commands.
 
 | Command | Answers |
 |---|---|
+| `basa projects list` | What campaigns are active |
+| `basa projects show <id>` | Everything about one campaign |
 | `basa deals list` | What is outstanding right now |
 | `basa deals show <id>` | Where one deal stands |
 | `basa contracts list` | What is awaiting signature |
@@ -135,6 +137,45 @@ basa deals list -e staging --team acme          # a unique fragment is enough
 
 A fragment matching two of your teams is an error, not a coin flip. The team in use is printed above
 every result, so you can always see which one you are looking at.
+
+### Projects
+
+A project is one campaign: a brand, a set of roles, and the deals run under it.
+
+```
+$ basa projects list -e staging --archived all
+staging · Acme Agency
+ID                                    NAME             BRAND              TYPE       NDA  ARCHIVED  UPDATED
+9f2c0001-2222-3333-4444-555566667701  Autumn Launch    Northwind Trading  social     yes  no        2026-08-19
+9f2c0002-2222-3333-4444-555566667702  Spring Campaign  Acme               social     no   no        2026-08-17
+9f2c0003-2222-3333-4444-555566667703  Holiday Push     Glow & Co          affiliate  no   yes       2026-06-02
+```
+
+**Archived projects are hidden unless you ask**, the same way the Basa web app hides them. The
+`--archived` flag has three settings rather than being on/off, because "only the archived ones" and
+"both" are different questions:
+
+| Flag | Effect |
+|---|---|
+| `--archived` | `false` for active only (the default), `true` for archived only, `all` for both |
+| `--search` | Only projects whose name, or whose brand's name, contains this |
+| `--limit`, `-n` | How many to show, 1–100 (default 25) |
+
+Columns that would say the same thing on every row are said once in the heading instead — so a page
+that is all one brand loses the **BRAND** column and names the brand above the table, and the
+**ARCHIVED** column appears only when a page actually holds both. **NDA** is whether the campaign
+gates outreach behind an NDA.
+
+```bash
+basa projects list -e staging --archived all
+basa projects list -e staging --search northwind
+basa projects show 9f2c0001-2222-3333-4444-555566667701 -e staging
+```
+
+`projects show` adds the fields a list has no room for — among them the name talent sees on the
+outreach surface, which is often unset, in which case they see the internal name instead.
+
+**This is where a project id for `basa deals list --project` comes from.**
 
 ### Deals
 
@@ -194,10 +235,15 @@ without a deal attached, which is a normal shape.
 
 ### A note on ids
 
-Ids are short strings like `EfhxL`. **The same string can be a valid id for more than one kind of
-thing** — a deal and a contract can share one. That is fine as long as you use it with the command it
-came from: `basa contracts show EfhxL` and `basa deals show EfhxL` are both valid and will show you
-different things. If you get an unexpected result, check you are using the right command for the id.
+Deal and contract ids are short strings like `EfhxL`. **The same string can be a valid id for more
+than one kind of thing** — a deal and a contract can share one. That is fine as long as you use it
+with the command it came from: `basa contracts show EfhxL` and `basa deals show EfhxL` are both valid
+and will show you different things. If you get an unexpected result, check you are using the right
+command for the id.
+
+**Project ids are the exception: they are long UUIDs** like
+`9f2c0001-2222-3333-4444-555566667701`, so they cannot be confused with anything else, and the
+warning above does not apply to them. A project id copied out of a Basa web URL works too.
 
 ---
 

@@ -393,6 +393,129 @@ func (c *Client) contractPath(teamID int64, id string) string {
 	return fmt.Sprintf("/api/v1/teams/%d/contracts/%s", teamID, url.PathEscape(id))
 }
 
+// --- projects --------------------------------------------------------------
+
+// Project mirrors the fields of the projects endpoints that the CLI renders.
+type Project struct {
+	// A UUID, not a Sqid: `projects.id` is a uuid column, so unlike a deal or
+	// a contract id this is 36 characters and already opaque. It is also the
+	// value `deals list --project` takes.
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// The buyer-set name talent sees on the outreach surface, distinct from the
+	// internal Name and frequently null.
+	ExternalName *string `json:"external_name"`
+	// May name a client owned by another team — a declared exception the web
+	// makes too, so the API does and this renders it.
+	Brand *struct {
+		Name string `json:"name"`
+	} `json:"brand"`
+	Archived    bool    `json:"archived"`
+	Type        *string `json:"type"`
+	NDARequired bool    `json:"nda_required"`
+	CreatedAt   *string `json:"created_at"`
+	UpdatedAt   *string `json:"updated_at"`
+}
+
+type ProjectPage struct {
+	Projects []Project
+	Meta     PageMeta
+}
+
+// ProjectFilters are the query parameters the projects listing accepts.
+type ProjectFilters struct {
+	// Archived is forwarded verbatim rather than modelled as a bool, because
+	// the server's parameter is a tri-state: absent or "false" is active only,
+	// "true" is archived only, "all" is both. A bool cannot say three things,
+	// and the server already owns the message for anything else ("archived
+	// must be one of: true, false, all.").
+	//
+	// It is a POINTER so that "the flag was not given" and "the flag was given
+	// an empty value" stay distinguishable. They are not the same request: the
+	// first is the server's active-only default, while `--archived=` — which a
+	// shell writes whenever an interpolated variable is empty — is an operator
+	// asking for something invalid, and the server answers it with a 422 naming
+	// the valid values. Collapsing the two returned an active-only page and
+	// looked like success. Same defect the Limit field's != 0 comment describes.
+	Archived *string
+	Search   string
+	Limit    int
+}
+
+func (f ProjectFilters) query() url.Values {
+	q := url.Values{}
+	if f.Archived != nil {
+		q.Set("archived", *f.Archived)
+	}
+	// Search stays a plain string: unlike archived, an empty value and an
+	// absent one are the same request. `search=` passes the server's
+	// `max:255` rule and filters nothing, which is exactly what omitting it
+	// does, so there is no message being swallowed here and nothing to carry.
+	if f.Search != "" {
+		q.Set("search", f.Search)
+	}
+	// != 0 for the same reason as DealFilters: an out-of-range value is the
+	// operator asking for something invalid, and the server owns that message.
+	if f.Limit != 0 {
+		q.Set("per_page", strconv.Itoa(f.Limit))
+	}
+	return q
+}
+
+func (c *Client) Projects(ctx context.Context, teamID int64, filters ProjectFilters) (*ProjectPage, error) {
+	var envelope struct {
+		Data []Project `json:"data"`
+		Meta PageMeta  `json:"meta"`
+	}
+	if err := c.get(ctx, c.projectsPath(teamID, filters), &envelope); err != nil {
+		return nil, err
+	}
+	return &ProjectPage{Projects: envelope.Data, Meta: envelope.Meta}, nil
+}
+
+func (c *Client) ProjectsRaw(ctx context.Context, teamID int64, filters ProjectFilters) (json.RawMessage, error) {
+	var raw json.RawMessage
+	if err := c.get(ctx, c.projectsPath(teamID, filters), &raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+
+func (c *Client) Project(ctx context.Context, teamID int64, id string) (*Project, error) {
+	var envelope struct {
+		Data Project `json:"data"`
+	}
+	if err := c.get(ctx, c.projectPath(teamID, id), &envelope); err != nil {
+		return nil, err
+	}
+	return &envelope.Data, nil
+}
+
+func (c *Client) ProjectRaw(ctx context.Context, teamID int64, id string) (json.RawMessage, error) {
+	var raw json.RawMessage
+	if err := c.get(ctx, c.projectPath(teamID, id), &raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+
+func (c *Client) projectsPath(teamID int64, filters ProjectFilters) string {
+	path := fmt.Sprintf("/api/v1/teams/%d/projects", teamID)
+	if q := filters.query(); len(q) > 0 {
+		path += "?" + q.Encode()
+	}
+	return path
+}
+
+// projectPath escapes the id rather than validating its shape. The server
+// accepts either the long UUID its own responses carry or the short form the
+// web's URLs use, and answers anything that cannot name a project with a 404 —
+// so a client-side well-formedness check would only duplicate a server rule
+// and risk disagreeing with it.
+func (c *Client) projectPath(teamID int64, id string) string {
+	return fmt.Sprintf("/api/v1/teams/%d/projects/%s", teamID, url.PathEscape(id))
+}
+
 func (c *Client) get(ctx context.Context, path string, into any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
