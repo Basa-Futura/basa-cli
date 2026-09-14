@@ -273,6 +273,12 @@ func openBrowser(target string) error {
 		name, args = "xdg-open", []string{target}
 	}
 
+	// #nosec G204 -- name is not variable input: the switch above assigns it one of
+	// three string literals, chosen by GOOS. target is passed as an argv element
+	// rather than through a shell, so there is no command to inject into, and the
+	// caller has already required it to be an http/https URL with a host
+	// (isBrowsable). The URL is the operator's own --url or config value, built
+	// before any request is made, so no server influences it.
 	return exec.Command(name, args...).Start()
 }
 
