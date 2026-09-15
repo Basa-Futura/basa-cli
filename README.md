@@ -336,7 +336,7 @@ the two meet at HTTP and nowhere else — this module imports nothing from the a
 |---|---|
 | `basa-web` → `docs/cli/api.md` | The API reference: endpoints, gates, status codes |
 | `basa-web` → `docs/cli/scope.md` | Scope of record for both halves: what is in, what is cut, and why |
-| here → `docs/INSTALL.md` | Install, and the open hosting decision |
+| here → `docs/INSTALL.md` | Install, upgrade, and why the repository is public |
 
 ### Layout
 
