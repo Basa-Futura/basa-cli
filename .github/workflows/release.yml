@@ -110,6 +110,7 @@ jobs:
         run: ./dist/basa-linux-amd64 licenses > dist/THIRD-PARTY-NOTICES.txt
 
       - name: Publish release
+        id: publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -122,12 +123,27 @@ jobs:
       # after the release is created, so a partial failure leaves something
       # installers will 404 on -- and under immutability it cannot be repaired.
       # This cannot fix that, but it refuses to report success over it.
+      #
+      # It must therefore run when publish FAILED, which is the partial case it
+      # exists to diagnose. On the default success() condition it would be
+      # skipped exactly then, making it decorative. Gated on publish having
+      # actually run, so a failure earlier in the job (a red guard, a broken
+      # build) does not drag it in with no dist/ to count.
       - name: Verify every asset published
+        if: ${{ !cancelled() && steps.publish.outcome != 'skipped' }}
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          expected=$(ls dist/basa-* dist/checksums.txt dist/THIRD-PARTY-NOTICES.txt | wc -l | tr -d ' ')
+          # Publish can also fail before creating anything. That is the benign
+          # shape -- no release, no burned number -- and the publish step's own
+          # error is the one worth reading, so do not bury it under a second.
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "No release exists for $GITHUB_REF_NAME; publish created nothing, so there is nothing to verify."
+            exit 0
+          fi
+
+          expected=$(ls dist/basa-* dist/checksums.txt dist/THIRD-PARTY-NOTICES.txt 2>/dev/null | wc -l | tr -d ' ')
           actual=$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets | length')
           echo "assets expected=$expected published=$actual"
           if [ "$actual" -ne "$expected" ]; then
