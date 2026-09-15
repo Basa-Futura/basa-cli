@@ -15,8 +15,16 @@ name: release
 # workflow, whose `gh release create` then fails because the release already
 # exists -- leaving a published release with no assets, a permanently burned
 # version number, and a broken installer, since install.sh resolves
-# /releases/latest. That is exactly how v0.1.2 was lost. Push the tag; let this
-# workflow create the release and attach its assets in one atomic operation.
+# /releases/latest. That is exactly how v0.1.2 was lost. Push the tag and let
+# this workflow publish.
+#
+# Note what that does NOT promise. `gh release create` is not a transaction: it
+# creates the release and then uploads the assets, so a failure partway through
+# still leaves a release missing some of them -- and immutability makes that
+# just as unrecoverable as the empty case. The publish is a single STEP, not a
+# single atomic operation. The verification step at the end exists because of
+# exactly that gap: it cannot repair a partial publish, but it makes one fail
+# the run loudly instead of being discovered later through a broken install.
 
 on:
   push:
@@ -25,6 +33,19 @@ on:
 
 permissions:
   contents: write
+
+# Serialize by tag, and never cancel the run already in flight. The guard below
+# is a check-then-create, so two runs for the same tag -- a manual re-run
+# started while the first is still building is the realistic case -- could both
+# pass it and race to `gh release create`. Queuing the second behind the first
+# means it re-evaluates the guard after the first has published, and stops at
+# the cheap step instead of after a four-platform build.
+#
+# cancel-in-progress is deliberately false, the opposite of test.yml: cancelling
+# a half-finished publish is how you get a release with some of its assets.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -96,3 +117,22 @@ jobs:
             --title "$GITHUB_REF_NAME" \
             --generate-notes \
             dist/basa-* dist/checksums.txt dist/THIRD-PARTY-NOTICES.txt
+
+      # A finished publish step is not a usable release. Asset upload happens
+      # after the release is created, so a partial failure leaves something
+      # installers will 404 on -- and under immutability it cannot be repaired.
+      # This cannot fix that, but it refuses to report success over it.
+      - name: Verify every asset published
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          expected=$(ls dist/basa-* dist/checksums.txt dist/THIRD-PARTY-NOTICES.txt | wc -l | tr -d ' ')
+          actual=$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets | length')
+          echo "assets expected=$expected published=$actual"
+          if [ "$actual" -ne "$expected" ]; then
+            echo "::error title=Incomplete release::$GITHUB_REF_NAME published $actual of $expected assets."
+            echo "Immutable releases cannot be repaired and the tag cannot be reused." >&2
+            echo "Tag the next version number and let this workflow publish it." >&2
+            exit 1
+          fi
