@@ -7,6 +7,16 @@ name: release
 # The install script resolves /releases/latest and fetches basa-<os>-<arch> plus
 # checksums.txt from the release assets, so the asset names here and the ones in
 # scripts/install.sh have to stay in step.
+#
+# DO NOT create the release by hand. This repository has immutable releases
+# enabled, which makes a hand-made release unrecoverable in two ways at once: a
+# published release can never gain assets, and deleting it does NOT free its tag
+# name for reuse. The web UI's release form creates the tag, which fires this
+# workflow, whose `gh release create` then fails because the release already
+# exists -- leaving a published release with no assets, a permanently burned
+# version number, and a broken installer, since install.sh resolves
+# /releases/latest. That is exactly how v0.1.2 was lost. Push the tag; let this
+# workflow create the release and attach its assets in one atomic operation.
 
 on:
   push:
@@ -20,6 +30,42 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      # First, and before the build, so this costs seconds rather than minutes
+      # and fails while the version number is still salvageable.
+      #
+      # `gh release create` is not idempotent. Without this guard a release that
+      # already exists is discovered only at the final step, after a full check
+      # and a four-platform build have succeeded -- and under immutable releases
+      # that discovery is terminal: the existing release cannot take these
+      # assets, and its tag cannot be reused. Failing here turns a burned
+      # version into a re-runnable mistake.
+      #
+      # No checkout needed: GH_REPO tells gh which repository to ask about.
+      #
+      # This fails OPEN by design: any non-zero exit from `gh release view` --
+      # including a network or auth error, not just a genuine 404 -- is read as
+      # "no release" and the run proceeds. That is the safer direction, because
+      # the cost of a false negative is today's behaviour (a late failure at the
+      # publish step) while a false positive would block a legitimate release
+      # for a transient reason.
+      - name: Refuse to publish over an existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "::error title=Release already exists::A release for $GITHUB_REF_NAME already exists, so this workflow cannot create it."
+            echo "Releases in this repository are immutable:" >&2
+            echo "  - the existing release can never receive these assets, and" >&2
+            echo "  - deleting it will NOT free the tag name for reuse." >&2
+            echo "" >&2
+            echo "Do not delete and retry. Tag the next version number instead, and let this" >&2
+            echo "workflow create the release -- never create one through the web UI, whose" >&2
+            echo "release form creates the tag and causes exactly this failure." >&2
+            exit 1
+          fi
+          echo "No existing release for $GITHUB_REF_NAME - safe to publish."
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
