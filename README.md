@@ -48,10 +48,10 @@ It works out your platform, verifies the download against the published checksum
 basa version          # check it worked
 ```
 
-> **This needs the repository to be public and to have a published release** — the installer
-> authenticates with nothing, which is what makes it one line. Neither is true yet, so today the
-> installer fails with a clear message and you build from source instead. See
-> [docs/INSTALL.md](docs/INSTALL.md) for both paths and the reasoning.
+> **This works because the repository is public and publishes releases** — the installer
+> authenticates with nothing, which is what makes it one line. Re-running it is also how you
+> upgrade: it overwrites the binary in place, and there is deliberately no self-update. See
+> [docs/INSTALL.md](docs/INSTALL.md) for the from-source path and the reasoning.
 
 ### 3. Log in
 
