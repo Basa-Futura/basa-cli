@@ -7,6 +7,24 @@ name: release
 # The install script resolves /releases/latest and fetches basa-<os>-<arch> plus
 # checksums.txt from the release assets, so the asset names here and the ones in
 # scripts/install.sh have to stay in step.
+#
+# DO NOT create the release by hand. This repository has immutable releases
+# enabled, which makes a hand-made release unrecoverable in two ways at once: a
+# published release can never gain assets, and deleting it does NOT free its tag
+# name for reuse. The web UI's release form creates the tag, which fires this
+# workflow, whose `gh release create` then fails because the release already
+# exists -- leaving a published release with no assets, a permanently burned
+# version number, and a broken installer, since install.sh resolves
+# /releases/latest. That is exactly how v0.1.2 was lost. Push the tag and let
+# this workflow publish.
+#
+# Note what that does NOT promise. `gh release create` is not a transaction: it
+# creates the release and then uploads the assets, so a failure partway through
+# still leaves a release missing some of them -- and immutability makes that
+# just as unrecoverable as the empty case. The publish is a single STEP, not a
+# single atomic operation. The verification step at the end exists because of
+# exactly that gap: it cannot repair a partial publish, but it makes one fail
+# the run loudly instead of being discovered later through a broken install.
 
 on:
   push:
@@ -16,10 +34,59 @@ on:
 permissions:
   contents: write
 
+# Serialize by tag, and never cancel the run already in flight. The guard below
+# is a check-then-create, so two runs for the same tag -- a manual re-run
+# started while the first is still building is the realistic case -- could both
+# pass it and race to `gh release create`. Queuing the second behind the first
+# means it re-evaluates the guard after the first has published, and stops at
+# the cheap step instead of after a four-platform build.
+#
+# cancel-in-progress is deliberately false, the opposite of test.yml: cancelling
+# a half-finished publish is how you get a release with some of its assets.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      # First, and before the build, so this costs seconds rather than minutes
+      # and fails while the version number is still salvageable.
+      #
+      # `gh release create` is not idempotent. Without this guard a release that
+      # already exists is discovered only at the final step, after a full check
+      # and a four-platform build have succeeded -- and under immutable releases
+      # that discovery is terminal: the existing release cannot take these
+      # assets, and its tag cannot be reused. Failing here turns a burned
+      # version into a re-runnable mistake.
+      #
+      # No checkout needed: GH_REPO tells gh which repository to ask about.
+      #
+      # This fails OPEN by design: any non-zero exit from `gh release view` --
+      # including a network or auth error, not just a genuine 404 -- is read as
+      # "no release" and the run proceeds. That is the safer direction, because
+      # the cost of a false negative is today's behaviour (a late failure at the
+      # publish step) while a false positive would block a legitimate release
+      # for a transient reason.
+      - name: Refuse to publish over an existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "::error title=Release already exists::A release for $GITHUB_REF_NAME already exists, so this workflow cannot create it."
+            echo "Releases in this repository are immutable:" >&2
+            echo "  - the existing release can never receive these assets, and" >&2
+            echo "  - deleting it will NOT free the tag name for reuse." >&2
+            echo "" >&2
+            echo "Do not delete and retry. Tag the next version number instead, and let this" >&2
+            echo "workflow create the release -- never create one through the web UI, whose" >&2
+            echo "release form creates the tag and causes exactly this failure." >&2
+            exit 1
+          fi
+          echo "No existing release for $GITHUB_REF_NAME - safe to publish."
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
@@ -43,6 +110,7 @@ jobs:
         run: ./dist/basa-linux-amd64 licenses > dist/THIRD-PARTY-NOTICES.txt
 
       - name: Publish release
+        id: publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -50,3 +118,54 @@ jobs:
             --title "$GITHUB_REF_NAME" \
             --generate-notes \
             dist/basa-* dist/checksums.txt dist/THIRD-PARTY-NOTICES.txt
+
+      # A finished publish step is not a usable release. Asset upload happens
+      # after the release is created, so a partial failure leaves something
+      # installers will 404 on -- and under immutability it cannot be repaired.
+      # This cannot fix that, but it refuses to report success over it.
+      #
+      # It must therefore run when publish FAILED, which is the partial case it
+      # exists to diagnose. On the default success() condition it would be
+      # skipped exactly then, making it decorative. Gated on publish having
+      # actually run, so a failure earlier in the job (a red guard, a broken
+      # build) does not drag it in with no dist/ to count.
+      - name: Verify every asset published
+        if: ${{ !cancelled() && steps.publish.outcome != 'skipped' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # Publish can also fail before creating anything. That is the benign
+          # shape -- no release, no burned number -- and the publish step's own
+          # error is the one worth reading, so do not bury it under a second.
+          #
+          # But only a CONFIRMED not-found earns that treatment. Any other
+          # failure of this query -- network, auth, rate limit -- says nothing
+          # about whether a release exists, and a partial one may well. Unlike
+          # the guard at the top of this job, this branch must NOT fail open:
+          # there the cost of a wrong guess is a late failure, here it is
+          # silently certifying a broken release as fine.
+          if ! view_err=$(gh release view "$GITHUB_REF_NAME" 2>&1 >/dev/null); then
+            case "$view_err" in
+              *"release not found"*|*"Not Found"*|*"HTTP 404"*)
+                echo "No release exists for $GITHUB_REF_NAME; publish created nothing, so there is nothing to verify."
+                exit 0
+                ;;
+              *)
+                echo "::error title=Cannot verify release::Could not determine whether $GITHUB_REF_NAME exists: $view_err"
+                echo "Refusing to treat this as a benign no-release case -- a partial release may exist." >&2
+                echo "Check the release page before tagging anything else." >&2
+                exit 1
+                ;;
+            esac
+          fi
+
+          expected=$(ls dist/basa-* dist/checksums.txt dist/THIRD-PARTY-NOTICES.txt 2>/dev/null | wc -l | tr -d ' ')
+          actual=$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets | length')
+          echo "assets expected=$expected published=$actual"
+          if [ "$actual" -ne "$expected" ]; then
+            echo "::error title=Incomplete release::$GITHUB_REF_NAME published $actual of $expected assets."
+            echo "Immutable releases cannot be repaired and the tag cannot be reused." >&2
+            echo "Tag the next version number and let this workflow publish it." >&2
+            exit 1
+          fi
