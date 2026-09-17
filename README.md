@@ -56,10 +56,14 @@ basa version          # check it worked
 ### 3. Log in
 
 ```bash
-basa auth login --env staging --url https://staging.basa.example
+basa auth login
 ```
 
-That prints a link to an approval page in Basa and opens it for you. Approve there, and Basa mints
+That is the whole command — production's address is built into the binary, so there is no hostname
+to look up and no environment to name. (Basa staff, who reach staging and local too, name the one
+they mean: `basa auth login --env staging --url https://staging.basa.example`.)
+
+It prints a link to an approval page in Basa and opens it for you. Approve there, and Basa mints
 the token and shows it **once**, with a copy button. Copy it, come back to the terminal, and paste it
 at the prompt.
 
@@ -74,7 +78,7 @@ Somewhere a browser cannot open — over SSH, say — the link still prints, and
 the attempt:
 
 ```bash
-basa auth login --env staging --no-browser
+basa auth login --no-browser
 ```
 
 The token goes into your macOS keychain. If no keychain is available it falls back to a file at
@@ -83,7 +87,7 @@ The token goes into your macOS keychain. If no keychain is available it falls ba
 Check it worked:
 
 ```bash
-basa auth status --env staging
+basa auth status
 ```
 
 ---
@@ -107,20 +111,53 @@ Run `basa` on its own at any time to see the available commands.
 | `basa version` | Which build this is |
 | `basa licenses` | Third-party licence notices, in full |
 
-### Which environment — always required
+### Which environment
 
-**Every command that talks to Basa needs `--env` (or `-e`). There is no default, on purpose.** A
-tool that quietly assumes production is one typo away from trouble, so `basa` would rather ask than
-guess — even when only one environment is configured. `basa version` and `basa --help` are the
-exceptions: they never reach a server, so they never ask which one.
+**If production is the only Basa you have, there is nothing to configure.** Run `basa auth login`,
+approve the CLI in your browser, and you are done — production's address is compiled into the
+binary, so you never type a hostname and never pass `--env`.
 
 ```bash
+basa auth login          # production, no flags, no URL
+basa deals list
+```
+
+**Staff hold several environments, so they name the one they mean** with `--env` (or `-e`), or by
+setting `BASA_ENV`. A tool that quietly assumes production is one typo away from trouble, so `basa`
+would rather ask than guess.
+
+```bash
+basa auth login --env staging --url https://staging.basa.example
 basa deals list --env staging
 basa deals list -e staging
 
 export BASA_ENV=staging      # or set it once for your shell
 basa deals list
 ```
+
+`basa version` and `basa --help` never reach a server, so they never ask which one.
+
+<details>
+<summary>Exactly when <code>basa</code> chooses production for you</summary>
+
+It stays silent and asks you to choose unless *all* of these hold:
+
+- you passed no `--env` and set no `BASA_ENV`
+- **production is the only environment configured on this machine.** This is the one that matters:
+  the moment a second one exists, the choice is real and you are asked again. Only staff can
+  configure a second one, because staging and local refuse everyone else.
+- the address recorded for production at login is outside `@basafutura.com` — or nothing is
+  recorded yet, on a machine that has only ever seen production
+- `BASA_TOKEN` is not set — automation names its environment
+
+Anything you say outranks it: `--env` and `BASA_ENV` always win. `basa auth login` is the one
+exception to the whole rule — it defaults to production for everyone, because it is what *creates*
+the identity the rule reads, and it prints the environment before asking for a token.
+
+Passing `--url` writes that address to `config.json` and it wins over the built-in from then on,
+which is how production gets pointed somewhere else without a new build.
+
+</details>
 
 Your environments live in `~/.config/basa/config.json`. Tokens do not — they are never written
 there.
@@ -265,7 +302,7 @@ a pipeline keeps working even when a command fails, and the JSON stays parseable
 | `0` | It worked | — |
 | `1` | Something about the command was wrong | Read the message; it says what to fix |
 | `2` | That thing does not exist, or you cannot see it | Check the id |
-| `3` | You are not logged in, or your session ended | `basa auth login --env <name>` |
+| `3` | You are not logged in, or your session ended | `basa auth login` |
 | `4` | You are not allowed to do that | Ask a Basa administrator for access |
 
 `3` and `4` are separate because the fix is different: one you can do yourself, the other needs a

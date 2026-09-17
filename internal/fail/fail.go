@@ -103,11 +103,20 @@ func NotFound(msg string) *Error {
 
 // NotLoggedIn is "there is no usable token on this machine", which is a
 // different situation from the server rejecting one.
-func NotLoggedIn(env string) *Error {
+//
+// named says whether the operator picked this environment themselves. When they
+// did not — it was chosen for them, because production is all they have — the
+// hint must not teach them a flag they have never needed and do not need now.
+func NotLoggedIn(env string, named bool) *Error {
+	hint := "Run: basa auth login"
+	if named {
+		hint = fmt.Sprintf("Run: basa auth login --env %s", env)
+	}
+
 	return &Error{
 		Code: CodeAuth,
 		Msg:  fmt.Sprintf("You are not logged in to %q.", env),
-		Hint: fmt.Sprintf("Run: basa auth login --env %s", env),
+		Hint: hint,
 	}
 }
 

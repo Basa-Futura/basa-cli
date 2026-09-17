@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 
@@ -109,7 +110,11 @@ func clientFor(deps *Deps) (*client.Client, string, error) {
 
 	token, err := deps.Config.Token(env)
 	if err != nil {
-		return nil, "", fail.NotLoggedIn(env)
+		// Whether the operator named this environment is exactly whether they
+		// supplied one of the two ways of naming it; Resolve chose it for them
+		// otherwise, and the hint should not mention a flag they never typed.
+		named := deps.EnvFlag != "" || os.Getenv(config.EnvVarEnvironment) != ""
+		return nil, "", fail.NotLoggedIn(env, named)
 	}
 
 	return client.New(env, environment.URL, token), env, nil

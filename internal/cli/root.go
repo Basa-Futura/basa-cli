@@ -46,11 +46,16 @@ func Run(args []string, stdout, stderr io.Writer) int {
 It reads the same data you can see in the browser, as you, with the same
 permissions. It can do nothing that you could not already do in the web app.
 
-Every command needs to know which environment to talk to, and there is no
-default: pass --env, or set BASA_ENV. That is deliberate — a tool that quietly
-assumes production is one typo away from trouble.`,
-		Example: `  basa auth login --env staging --url https://staging.basa.example
-  basa me --env staging
+If production is the only Basa you have, there is nothing to set up: run
+basa auth login, approve the CLI in your browser, and every command works.
+Production's address is built in, so you never type a hostname.
+
+Staff reach more than one environment, so they name the one they mean with
+--env or BASA_ENV. basa asks as soon as a second environment is configured —
+a tool that quietly assumes production is one typo away from trouble.`,
+		Example: `  basa auth login
+  basa deals list
+  basa auth login --env staging --url https://staging.basa.example
   basa me --env staging --json`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -64,7 +69,7 @@ assumes production is one typo away from trouble.`,
 	}
 
 	root.PersistentFlags().BoolVar(&asJSON, "json", false, "Output JSON instead of a table")
-	root.PersistentFlags().StringVarP(&envFlag, "env", "e", "", "Which Basa environment to talk to (required)")
+	root.PersistentFlags().StringVarP(&envFlag, "env", "e", "", "Which Basa environment to talk to (defaults to production when it is your only one)")
 	root.PersistentFlags().StringVarP(&teamFlag, "team", "t", "", "Which team, by name or id (needed if you belong to several)")
 
 	// Flags are parsed before any RunE fires, so fold them into the shared deps
