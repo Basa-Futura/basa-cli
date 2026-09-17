@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 
@@ -109,10 +110,18 @@ func clientFor(deps *Deps) (*client.Client, string, error) {
 
 	token, err := deps.Config.Token(env)
 	if err != nil {
-		return nil, "", fail.NotLoggedIn(env)
+		return nil, "", fail.NotLoggedIn(env, envWasNamed(deps))
 	}
 
-	return client.New(env, environment.URL, token), env, nil
+	return client.New(env, environment.URL, token, envWasNamed(deps)), env, nil
+}
+
+// envWasNamed reports whether the operator chose the environment themselves,
+// which is exactly whether they used one of the two ways of saying so. Resolve
+// chose it for them otherwise, and every "log in again" hint downstream reads
+// this to decide whether to mention a flag the operator has never typed.
+func envWasNamed(deps *Deps) bool {
+	return deps.EnvFlag != "" || os.Getenv(config.EnvVarEnvironment) != ""
 }
 
 func capitalize(s string) string {

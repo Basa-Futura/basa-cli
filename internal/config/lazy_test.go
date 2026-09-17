@@ -30,7 +30,7 @@ func TestLoadDoesNotTouchTheCredentialStore(t *testing.T) {
 	}
 
 	// Saving is the first operation that genuinely needs it.
-	if err := cfg.SaveToken("any", "42|stored"); err != nil {
+	if err := cfg.SaveToken("any", "42|stored", ""); err != nil {
 		t.Fatalf("SaveToken: %v", err)
 	}
 	if cfg.store == nil {

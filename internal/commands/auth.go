@@ -60,7 +60,7 @@ history. Paste it at the prompt, or pipe it in.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&url, "url", "", "Base URL of the environment (required the first time)")
+	cmd.Flags().StringVar(&url, "url", "", "Base URL of the environment (required the first time, except production)")
 	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "Do not open a browser (the approval URL is printed either way)")
 
 	return cmd
@@ -69,21 +69,27 @@ history. Paste it at the prompt, or pipe it in.`,
 func runAuthLogin(ctx context.Context, deps *Deps, url string, noBrowser bool) error {
 	cfg, out := deps.Config, deps.Out
 
-	// The environment must be named explicitly. There is no default, so
-	// `basa auth login` on its own is an error rather than a guess.
+	// Login is the one command that cannot consult a stored identity to decide
+	// whether to ask — it is what creates that identity. So it defaults to
+	// production outright, for everyone.
+	//
+	// That is a smaller concession than it looks. The environment being logged
+	// in to is printed before a token is requested and again on success, a
+	// wrong guess costs a browser page rather than a mutation, and staff name
+	// their environment anyway. Set against it, requiring --env here is the one
+	// thing standing between a non-staff operator and a working CLI, and they
+	// have exactly one environment to choose from.
 	env := deps.EnvFlag
 	if env == "" {
 		env = os.Getenv(config.EnvVarEnvironment)
 	}
 	if env == "" {
-		return fail.UsageHint(
-			"Which environment are you logging in to?",
-			"Pass --env, for example: basa auth login --env staging --url https://staging.basa.example",
-		)
+		env = config.EnvProduction
 	}
 
-	// A known environment keeps its URL; a new one needs one.
-	existing, known := cfg.Environments[env]
+	// A known environment keeps its URL, and production is known everywhere
+	// because its URL is compiled in. Only a genuinely new name needs --url.
+	existing, known := cfg.Lookup(env)
 	switch {
 	case url != "":
 		cfg.SetEnvironment(env, url)
@@ -96,11 +102,21 @@ func runAuthLogin(ctx context.Context, deps *Deps, url string, noBrowser bool) e
 		)
 	}
 
+	// One read of the resolved address, used for both the consent screen and the
+	// token check below. The switch above has just written it, but reading the
+	// map twice made that an invariant three lines away rather than a value.
+	target, _ := cfg.Lookup(env)
+
 	// Send the operator to the consent screen before asking for a token. Someone
 	// running this for the first time does not have one yet, and the URL is the
 	// only part of the flow they cannot work out for themselves.
-	pair := pairURL(cfg.Environments[env].URL)
-	out.Notice("Approve this CLI in your browser:\n\n    %s\n", pair)
+	pair := pairURL(target.URL)
+
+	// Name the environment, not just the URL. The operator is about to bind a
+	// token to it, and when login picked it for them the URL is the only thing
+	// that would have said which — which is precisely the case where they have
+	// least reason to be looking.
+	out.Notice("Approve this CLI in your browser to log in to %s:\n\n    %s\n", env, pair)
 
 	// Opening is a convenience; the printed URL is the part that always works.
 	// Auto-open fails silently on headless boxes, over SSH, and in containers,
@@ -125,12 +141,15 @@ func runAuthLogin(ctx context.Context, deps *Deps, url string, noBrowser bool) e
 	// Prove the token works before storing it. Storing an unusable token means
 	// the operator discovers the problem later, in a different command, with a
 	// confusing message.
-	me, err := client.New(env, cfg.Environments[env].URL, token).Me(ctx)
+	me, err := client.New(env, target.URL, token, envWasNamed(deps)).Me(ctx)
 	if err != nil {
 		return err
 	}
 
-	if err := cfg.SaveToken(env, token); err != nil {
+	// The email is stored with the token, not merely printed below: it is what
+	// lets a later command tell a staff operator (who must name their
+	// environment) from everyone else (who has only production to name).
+	if err := cfg.SaveToken(env, token, me.Email); err != nil {
 		return fail.Wrap(fail.CodeUsage, "Could not save the token.", err)
 	}
 	if err := cfg.Save(); err != nil {
@@ -154,7 +173,7 @@ func readToken(out *output.Writer) (string, error) {
 		if scanner.Scan() {
 			return normalizeToken(scanner.Text()), nil
 		}
-		return "", fail.UsageHint("No token was piped in.", "Pipe one: echo \"$TOKEN\" | basa auth login --env <name>")
+		return "", fail.UsageHint("No token was piped in.", "Pipe one: echo \"$TOKEN\" | basa auth login")
 	}
 
 	out.Notice("Paste your Basa API token (it will not be shown):")
@@ -295,12 +314,14 @@ look for. If you think a token has been exposed, revoke it there.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, out := deps.Config, deps.Out
 
-			env := deps.EnvFlag
-			if env == "" {
-				env = os.Getenv(config.EnvVarEnvironment)
-			}
-			if env == "" {
-				return fail.UsageHint("Which environment are you logging out of?", "Pass --env, for example: basa auth logout --env staging")
+			// Resolve rather than a hand-rolled check: an operator who runs
+			// every other command bare must be able to log out bare too, or the
+			// first-run contract has a hole in exactly the place someone
+			// reaches when something has gone wrong. For anyone holding more
+			// than one environment this still refuses to guess.
+			env, _, err := cfg.Resolve(deps.EnvFlag)
+			if err != nil {
+				return fail.Usage(capitalize(err.Error()) + ".")
 			}
 
 			if err := cfg.DeleteToken(env); err != nil {

@@ -47,7 +47,7 @@ func TestTokenRoundTripsThroughFileStorage(t *testing.T) {
 
 	const token = "42|aBcDeF0123456789wXyZ"
 
-	if err := cfg.SaveToken("staging", token); err != nil {
+	if err := cfg.SaveToken("staging", token, ""); err != nil {
 		t.Fatalf("SaveToken: %v", err)
 	}
 
@@ -66,7 +66,7 @@ func TestTokenIsNotWrittenToTheConfigFile(t *testing.T) {
 	const token = "42|aBcDeF0123456789wXyZ"
 	cfg.SetEnvironment("staging", "https://staging.example")
 
-	if err := cfg.SaveToken("staging", token); err != nil {
+	if err := cfg.SaveToken("staging", token, ""); err != nil {
 		t.Fatalf("SaveToken: %v", err)
 	}
 	if err := cfg.Save(); err != nil {
@@ -85,7 +85,7 @@ func TestTokenIsNotWrittenToTheConfigFile(t *testing.T) {
 func TestCredentialFileIsNotWorldReadable(t *testing.T) {
 	cfg := isolate(t)
 
-	if err := cfg.SaveToken("staging", "42|secret"); err != nil {
+	if err := cfg.SaveToken("staging", "42|secret", ""); err != nil {
 		t.Fatalf("SaveToken: %v", err)
 	}
 
@@ -101,7 +101,7 @@ func TestCredentialFileIsNotWorldReadable(t *testing.T) {
 func TestEnvVarTokenWinsOverStoredCredentials(t *testing.T) {
 	cfg := isolate(t)
 
-	if err := cfg.SaveToken("staging", "stored-token"); err != nil {
+	if err := cfg.SaveToken("staging", "stored-token", ""); err != nil {
 		t.Fatalf("SaveToken: %v", err)
 	}
 
@@ -125,7 +125,7 @@ func TestDeleteTokenIsIdempotent(t *testing.T) {
 		t.Fatalf("DeleteToken on absent credential: %v", err)
 	}
 
-	if err := cfg.SaveToken("staging", "42|secret"); err != nil {
+	if err := cfg.SaveToken("staging", "42|secret", ""); err != nil {
 		t.Fatalf("SaveToken: %v", err)
 	}
 	if err := cfg.DeleteToken("staging"); err != nil {
@@ -138,11 +138,52 @@ func TestDeleteTokenIsIdempotent(t *testing.T) {
 
 // --- environment resolution ------------------------------------------------
 
-func TestResolveRefusesToGuessWhenNothingIsConfigured(t *testing.T) {
+// A machine that has never been configured resolves to production, because
+// production is compiled in and is therefore the only thing it knows. The
+// command then fails on "not logged in", which is the accurate complaint —
+// where this once answered "pass --env with one of: production", a question
+// with exactly one possible answer.
+func TestResolveOnAFreshMachineChoosesProduction(t *testing.T) {
 	cfg := isolate(t)
 
-	if _, _, err := cfg.Resolve(""); err == nil {
-		t.Fatal("expected an error rather than a guess")
+	name, env, err := cfg.Resolve("")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if name != EnvProduction {
+		t.Fatalf("got %q, want %q", name, EnvProduction)
+	}
+	if env.URL != ProductionURL {
+		t.Fatalf("got URL %q, want the compiled-in %q", env.URL, ProductionURL)
+	}
+}
+
+// Production is known without any configuration at all, which is what spares a
+// non-staff operator from ever typing a hostname.
+func TestProductionIsKnownWithoutConfiguration(t *testing.T) {
+	cfg := isolate(t)
+
+	env, ok := cfg.Lookup(EnvProduction)
+	if !ok || env.URL != ProductionURL {
+		t.Fatalf("Lookup(production) = %q, %v", env.URL, ok)
+	}
+	if _, ok := cfg.Lookup("staging"); ok {
+		t.Fatal("only production is built in")
+	}
+}
+
+// Configuring production explicitly overrides the compiled-in URL, which is how
+// it gets corrected without shipping a new binary.
+func TestConfiguredProductionURLBeatsTheBuiltIn(t *testing.T) {
+	cfg := isolate(t)
+	cfg.SetEnvironment(EnvProduction, "https://prod-clone.example")
+
+	_, env, err := cfg.Resolve(EnvProduction)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if env.URL != "https://prod-clone.example" {
+		t.Fatalf("built-in URL won over the configured one: %q", env.URL)
 	}
 }
 
@@ -229,5 +270,165 @@ func TestConfigSurvivesSaveAndReload(t *testing.T) {
 	}
 	if reloaded.Environments["staging"].URL != "https://staging.example" {
 		t.Fatalf("environment did not persist: %v", reloaded.Environments)
+	}
+}
+
+// --- the non-staff production fallback -------------------------------------
+//
+// These pin the one case where Resolve chooses instead of asking. Read them
+// alongside TestResolveRefusesToGuessEvenWithOnlyOneEnvironment above: that
+// test is still the rule, and this is the exception, and the difference between
+// them is entirely who is logged in.
+
+// loggedInTo stores a credential so Resolve can read an identity back out.
+func loggedInTo(t *testing.T, cfg *Config, env, url, email string) {
+	t.Helper()
+
+	cfg.SetEnvironment(env, url)
+	if err := cfg.SaveToken(env, "42|token", email); err != nil {
+		t.Fatalf("SaveToken: %v", err)
+	}
+}
+
+func TestResolveChoosesProductionForANonStaffOperator(t *testing.T) {
+	cfg := isolate(t)
+	loggedInTo(t, cfg, EnvProduction, "https://app.example", "client@agency.example")
+
+	name, env, err := cfg.Resolve("")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if name != EnvProduction {
+		t.Fatalf("got %q, want %q", name, EnvProduction)
+	}
+	if env.URL != "https://app.example" {
+		t.Fatalf("got URL %q", env.URL)
+	}
+}
+
+// Staff hold several environments, so for them the question is the whole point.
+func TestResolveStillRefusesToGuessForStaff(t *testing.T) {
+	cfg := isolate(t)
+	loggedInTo(t, cfg, EnvProduction, "https://app.example", "ryan@basafutura.com")
+
+	if _, _, err := cfg.Resolve(""); err == nil {
+		t.Fatal("expected an error; staff must name their environment")
+	}
+}
+
+// A credential predating the email field reads as unknown, and unknown no
+// longer refuses: with production the only environment on this machine, it is
+// the only thing the operator could have meant. The environment count below is
+// what carries the safety now.
+func TestResolveStillChoosesProductionWhenTheIdentityIsUnknown(t *testing.T) {
+	cfg := isolate(t)
+	loggedInTo(t, cfg, EnvProduction, ProductionURL, "")
+
+	name, _, err := cfg.Resolve("")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if name != EnvProduction {
+		t.Fatalf("got %q, want %q", name, EnvProduction)
+	}
+}
+
+// THE safety property, now that production is compiled in and always known:
+// the moment a second environment is configured, the choice becomes real and is
+// asked about again — whoever is logged in. Only staff can configure a second
+// one, because staging and local refuse everyone else.
+func TestASecondEnvironmentTurnsTheFallbackOff(t *testing.T) {
+	cfg := isolate(t)
+	loggedInTo(t, cfg, EnvProduction, ProductionURL, "client@agency.example")
+
+	if _, _, err := cfg.Resolve(""); err != nil {
+		t.Fatalf("precondition: production alone should resolve: %v", err)
+	}
+
+	cfg.SetEnvironment("staging", "https://staging.example")
+
+	if _, _, err := cfg.Resolve(""); err == nil {
+		t.Fatal("expected an error once a second environment exists")
+	}
+}
+
+// Logged in to staging only: production is still *known* (it is built in), but
+// it is not the only configured environment, so nothing is chosen.
+func TestResolveRefusesWhenLoggedInElsewhere(t *testing.T) {
+	cfg := isolate(t)
+	loggedInTo(t, cfg, "staging", "https://staging.example", "client@agency.example")
+
+	if _, _, err := cfg.Resolve(""); err == nil {
+		t.Fatal("expected an error; a configured staging means the question is real")
+	}
+}
+
+// Automation must stay explicit, and this is also what keeps a BASA_TOKEN run
+// from probing the keyring — the credential read is the only thing that would.
+func TestResolveRefusesForAutomationEvenWhenNonStaff(t *testing.T) {
+	cfg := isolate(t)
+	loggedInTo(t, cfg, EnvProduction, "https://app.example", "client@agency.example")
+	t.Setenv(EnvVarToken, "42|from-env")
+
+	if _, _, err := cfg.Resolve(""); err == nil {
+		t.Fatal("expected an error; BASA_TOKEN callers must name their environment")
+	}
+}
+
+// The fallback is a floor, never a ceiling: anything the operator says wins.
+func TestExplicitSelectionOutranksTheFallback(t *testing.T) {
+	cfg := isolate(t)
+	loggedInTo(t, cfg, EnvProduction, "https://app.example", "client@agency.example")
+	cfg.SetEnvironment("staging", "https://staging.example")
+
+	name, _, err := cfg.Resolve("staging")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if name != "staging" {
+		t.Fatalf("flag lost to the fallback: got %q", name)
+	}
+
+	t.Setenv(EnvVarEnvironment, "staging")
+	if name, _, err = cfg.Resolve(""); err != nil || name != "staging" {
+		t.Fatalf("BASA_ENV lost to the fallback: got %q, %v", name, err)
+	}
+}
+
+// The email must survive credstore's FILE backend for the same reason the token
+// must — see TestTokenRoundTripsThroughFileStorage.
+func TestEmailRoundTripsThroughFileStorage(t *testing.T) {
+	cfg := isolate(t)
+
+	if err := cfg.SaveToken("staging", "42|secret", "  Client@Agency.Example  "); err != nil {
+		t.Fatalf("SaveToken: %v", err)
+	}
+	if got := cfg.Email("staging"); got != "Client@Agency.Example" {
+		t.Fatalf("got %q", got)
+	}
+	if got := cfg.Email("never-logged-in"); got != "" {
+		t.Fatalf("absent credential should give no email, got %q", got)
+	}
+}
+
+func TestIsStaffEmail(t *testing.T) {
+	for _, tc := range []struct {
+		email string
+		staff bool
+	}{
+		{"ryan@basafutura.com", true},
+		{"  Staff@BasaFutura.COM  ", true},
+		{"client@agency.example", false},
+		{"", false},
+		// The "@" in the suffix is what stops a lookalike domain from passing.
+		{"attacker@notbasafutura.com", false},
+		// A subdomain is not the staff domain either, matching User::isStaff().
+		{"someone@mail.basafutura.com", false},
+		{"basafutura.com", false},
+		{"someone@basafutura.com.evil.example", false},
+	} {
+		if got := IsStaffEmail(tc.email); got != tc.staff {
+			t.Errorf("IsStaffEmail(%q) = %v, want %v", tc.email, got, tc.staff)
+		}
 	}
 }

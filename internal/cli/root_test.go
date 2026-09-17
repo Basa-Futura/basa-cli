@@ -623,13 +623,96 @@ func TestLoginHelpNamesTheConsentScreenAndNotTheSettingsMenu(t *testing.T) {
 	}
 }
 
-func TestLoginRequiresAnEnvironment(t *testing.T) {
+// Bare `basa auth login` targets the compiled-in production environment, and
+// says so before asking for a token.
+//
+// This replaces a test that asserted the opposite (login refusing without
+// --env). That test did not fail when the behaviour changed, because it only
+// looked for the substring "--env" anywhere on stderr and the unrelated
+// "pipe a token" hint carried one — so it would have gone on passing whether
+// login defaulted to production or refused. Assert the pairing URL instead: it
+// is the thing an operator actually relies on, and it cannot be satisfied by
+// accident.
+func TestBareLoginTargetsBuiltInProduction(t *testing.T) {
 	h := newHarness(t, okHandler)
 
+	// The harness configures only "local", so nothing but the built-in default
+	// can put production's address on stderr.
 	_, stderr, code := h.run("auth", "login")
+
+	// No token can be piped in under test, so login stops there — after it has
+	// resolved and announced the environment, which is what is under test.
+	if code != 1 {
+		t.Fatalf("exit %d, want 1", code)
+	}
+	if !strings.Contains(stderr, config.ProductionURL+"/cli/pair") {
+		t.Errorf("should offer the built-in production pairing URL, got:\n%s", stderr)
+	}
+	if !strings.Contains(stderr, config.EnvProduction) {
+		t.Errorf("should name the environment being logged in to, got:\n%s", stderr)
+	}
+	// The whole point is that no flag is demanded of this operator.
+	if strings.Contains(stderr, "--env") {
+		t.Errorf("bare login must not ask for --env, got:\n%s", stderr)
+	}
+}
+
+// Staff still name a non-production environment, and a new one still needs its
+// URL — the default is production's alone.
+func TestLoginToANewEnvironmentStillNeedsItsURL(t *testing.T) {
+	h := newHarness(t, okHandler)
+
+	_, stderr, code := h.run("auth", "login", "--env", "staging")
 
 	if code != 1 {
 		t.Fatalf("exit %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "--url") {
+		t.Errorf("should ask for --url, got:\n%s", stderr)
+	}
+}
+
+// onlyProductionConfigured rewrites the harness's config so production is the
+// single known environment, which is the shape a non-staff operator's machine
+// actually has.
+func onlyProductionConfigured(t *testing.T) {
+	t.Helper()
+
+	path := filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "basa", "config.json")
+	body := `{"environments":{"production":{"url":"` + config.ProductionURL + `"}}}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+}
+
+// Logout has to be reachable bare too. It used to hand-roll its own "which
+// environment?" check instead of resolving, which left the one operator this
+// change is for able to run every command except the one they reach for when
+// something has gone wrong. Raised by Copilot on PR #5.
+func TestBareLogoutResolvesProduction(t *testing.T) {
+	h := newHarness(t, okHandler)
+	onlyProductionConfigured(t)
+
+	_, stderr, code := h.run("auth", "logout")
+
+	if code != 0 {
+		t.Fatalf("exit %d, want 0; stderr:\n%s", code, stderr)
+	}
+	if !strings.Contains(stderr, config.EnvProduction) {
+		t.Errorf("should say which environment it logged out of, got:\n%s", stderr)
+	}
+}
+
+// ...and it must still refuse to guess once there is a real choice to make.
+func TestBareLogoutStillRefusesWithASecondEnvironment(t *testing.T) {
+	h := newHarness(t, okHandler)
+
+	// The harness configures "local", so with the built-in production there are
+	// two and the question is real.
+	_, stderr, code := h.run("auth", "logout")
+
+	if code == 0 {
+		t.Fatalf("expected a refusal, got exit 0; stderr:\n%s", stderr)
 	}
 	if !strings.Contains(stderr, "--env") {
 		t.Errorf("should ask for --env, got:\n%s", stderr)
