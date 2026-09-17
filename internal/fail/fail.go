@@ -122,11 +122,21 @@ func NotLoggedIn(env string, named bool) *Error {
 
 // TokenRejected covers expired, revoked, and malformed tokens alike. The
 // operator does the same thing in every case, so they get the same message.
-func TokenRejected(env string) *Error {
+//
+// named carries the same meaning as in NotLoggedIn: an operator who never chose
+// this environment must not be handed a flag on the way back in. An expired
+// token is the most likely way someone on the bare production flow meets this
+// hint, so it is exactly where a stray --env would undo the change.
+func TokenRejected(env string, named bool) *Error {
+	hint := "Run: basa auth login"
+	if named {
+		hint = fmt.Sprintf("Run: basa auth login --env %s", env)
+	}
+
 	return &Error{
 		Code: CodeAuth,
 		Msg:  "Your session has expired or been revoked.",
-		Hint: fmt.Sprintf("Run: basa auth login --env %s", env),
+		Hint: hint,
 	}
 }
 

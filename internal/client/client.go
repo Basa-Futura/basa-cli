@@ -24,15 +24,22 @@ type Client struct {
 	baseURL string
 	token   string
 	env     string
-	http    *http.Client
+
+	// envNamed records whether the operator chose this environment themselves,
+	// so a 401 can phrase its "log in again" hint the way they invoked us —
+	// with a flag only if they used one.
+	envNamed bool
+
+	http *http.Client
 }
 
-func New(env, baseURL, token string) *Client {
+func New(env, baseURL, token string, envNamed bool) *Client {
 	return &Client{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		token:   token,
-		env:     env,
-		http:    &http.Client{Timeout: 30 * time.Second},
+		baseURL:  strings.TrimRight(baseURL, "/"),
+		token:    token,
+		env:      env,
+		envNamed: envNamed,
+		http:     &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -576,7 +583,7 @@ func (c *Client) statusError(status int, header http.Header, body []byte) error 
 
 	switch status {
 	case http.StatusUnauthorized:
-		return fail.TokenRejected(c.env)
+		return fail.TokenRejected(c.env, c.envNamed)
 
 	case http.StatusForbidden:
 		// 403 is either "API access is off for this account" or "this token

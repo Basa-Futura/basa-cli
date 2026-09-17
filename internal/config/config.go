@@ -319,9 +319,11 @@ type credential struct {
 	// call to a server that has already been picked.
 	//
 	// A credential written before this field existed unmarshals with an empty
-	// Email, which is read as "unknown" and never as "not staff": an unknown
-	// operator keeps naming their environment. The convenience arrives on their
-	// next login, which is the right way round for a guard rail.
+	// Email. That is not treated as a refusal: productionFallback leans on the
+	// environment count instead, so an operator whose machine knows only
+	// production still has it chosen for them, logged in before this field
+	// existed or not. An unknown identity only decides anything once a second
+	// environment is configured, and by then the fallback is off regardless.
 	Email string `json:"email,omitempty"`
 }
 

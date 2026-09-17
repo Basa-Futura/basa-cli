@@ -111,7 +111,12 @@ func runAuthLogin(ctx context.Context, deps *Deps, url string, noBrowser bool) e
 	// running this for the first time does not have one yet, and the URL is the
 	// only part of the flow they cannot work out for themselves.
 	pair := pairURL(target.URL)
-	out.Notice("Approve this CLI in your browser:\n\n    %s\n", pair)
+
+	// Name the environment, not just the URL. The operator is about to bind a
+	// token to it, and when login picked it for them the URL is the only thing
+	// that would have said which — which is precisely the case where they have
+	// least reason to be looking.
+	out.Notice("Approve this CLI in your browser to log in to %s:\n\n    %s\n", env, pair)
 
 	// Opening is a convenience; the printed URL is the part that always works.
 	// Auto-open fails silently on headless boxes, over SSH, and in containers,
@@ -136,7 +141,7 @@ func runAuthLogin(ctx context.Context, deps *Deps, url string, noBrowser bool) e
 	// Prove the token works before storing it. Storing an unusable token means
 	// the operator discovers the problem later, in a different command, with a
 	// confusing message.
-	me, err := client.New(env, target.URL, token).Me(ctx)
+	me, err := client.New(env, target.URL, token, envWasNamed(deps)).Me(ctx)
 	if err != nil {
 		return err
 	}
@@ -168,7 +173,7 @@ func readToken(out *output.Writer) (string, error) {
 		if scanner.Scan() {
 			return normalizeToken(scanner.Text()), nil
 		}
-		return "", fail.UsageHint("No token was piped in.", "Pipe one: echo \"$TOKEN\" | basa auth login --env <name>")
+		return "", fail.UsageHint("No token was piped in.", "Pipe one: echo \"$TOKEN\" | basa auth login")
 	}
 
 	out.Notice("Paste your Basa API token (it will not be shown):")
@@ -309,12 +314,14 @@ look for. If you think a token has been exposed, revoke it there.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, out := deps.Config, deps.Out
 
-			env := deps.EnvFlag
-			if env == "" {
-				env = os.Getenv(config.EnvVarEnvironment)
-			}
-			if env == "" {
-				return fail.UsageHint("Which environment are you logging out of?", "Pass --env, for example: basa auth logout --env staging")
+			// Resolve rather than a hand-rolled check: an operator who runs
+			// every other command bare must be able to log out bare too, or the
+			// first-run contract has a hole in exactly the place someone
+			// reaches when something has gone wrong. For anyone holding more
+			// than one environment this still refuses to guess.
+			env, _, err := cfg.Resolve(deps.EnvFlag)
+			if err != nil {
+				return fail.Usage(capitalize(err.Error()) + ".")
 			}
 
 			if err := cfg.DeleteToken(env); err != nil {
