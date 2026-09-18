@@ -104,6 +104,8 @@ Run `basa` on its own at any time to see the available commands.
 | `basa deals show <id>` | Where one deal stands |
 | `basa contracts list` | What is awaiting signature |
 | `basa contracts show <id>` | Where one contract stands |
+| `basa notifications list` | What is new for me |
+| `basa notifications show <id>` | The full text of one notification |
 | `basa me` | Who am I, what teams can I see, when does my token expire |
 | `basa auth login` | Store a token for an environment |
 | `basa auth status` | Same as `me`, phrased as a health check |
@@ -270,6 +272,44 @@ EfhxL  Ready for Signature  Spring Campaign agreement  Sam Rivera  VqXmZ  2026-0
 A contract in the **DEAL** column reading `standalone` is not missing data — it is a contract created
 without a deal attached, which is a normal shape.
 
+### Notifications
+
+Your own feed. **Unread only by default**, which is the tab the web opens on, so an empty result
+means "nothing new" rather than "nothing ever" — the heading says which of the two you are looking
+at.
+
+```
+$ basa notifications list -e staging
+staging · unread
+ID                                    WHEN        TYPE             MESSAGE
+9f2c0001-2222-3333-4444-555566667701  2026-09-17  deal_assigned    Dana Reed assigned you to the Autumn Launch deal for No…
+9f2c0002-2222-3333-4444-555566667702  2026-09-16  contract_signed  Northwind Trading signed the Spring Campaign contract.
+```
+
+| Flag | Effect |
+|---|---|
+| `--read` | `false` for unread (the default), `true` for read only, `all` for both |
+| `--sort-order` | `desc` newest first (the default), or `asc` |
+| `--limit`, `-n` | How many to show, 1–100 (default 25) |
+
+Three things worth knowing:
+
+**These are yours, not a team's.** Notification rows are addressed to you personally and carry no
+team at all, so this is the one listing where `--team` does nothing and no team is printed above the
+result.
+
+**Long messages are cut in the table**, marked with `…`. `basa notifications show <id>` and `--json`
+both carry the whole thing.
+
+**The feed says what happened, not what it happened to.** The API publishes the message text and no
+deal, contract or project id, so there is nothing here to paste into `basa deals show`. Read the
+sentence and look the deal up by name. This is a known gap rather than an oversight — linking a
+notification back to its subject is a disclosure decision, because a notification outlives your
+access to what it is about.
+
+**A `READ` column appears only when a page holds both** read and unread rows. Under the default
+filter every row is unread, so the column would repeat itself on every line.
+
 ### A note on ids
 
 Deal and contract ids are short strings like `EfhxL`. **The same string can be a valid id for more
@@ -278,7 +318,7 @@ with the command it came from: `basa contracts show EfhxL` and `basa deals show 
 and will show you different things. If you get an unexpected result, check you are using the right
 command for the id.
 
-**Project ids are the exception: they are long UUIDs** like
+**Project and notification ids are the exception: they are long UUIDs** like
 `9f2c0001-2222-3333-4444-555566667701`, so they cannot be confused with anything else, and the
 warning above does not apply to them. A project id copied out of a Basa web URL works too.
 
