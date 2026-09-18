@@ -534,6 +534,130 @@ func (c *Client) projectPath(teamID int64, id string) string {
 	return fmt.Sprintf("/api/v1/teams/%d/projects/%s", teamID, url.PathEscape(id))
 }
 
+// --- notifications ---------------------------------------------------------
+
+// Notification is one entry in the caller's own feed.
+//
+// Note what is NOT here, because its absence is a server decision rather than
+// an oversight in this struct: there is no deal, contract or project id. The
+// API deliberately publishes only the pre-rendered `message` out of the row's
+// free-form `data` column, so there is nothing to link a notification back to
+// what it is about. Adding fields here cannot conjure them.
+type Notification struct {
+	// A UUID, like a project's and for the same reason: `notifications.id` is a
+	// uuid column, already opaque, so it is not behind a Sqid. Both the long
+	// form and the short one name the same row on the way back in.
+	ID string `json:"id"`
+
+	// A namespace-free discriminator derived from the notification class —
+	// `deal_assigned`, `contract_signed`. Switch on it; do not parse it. The
+	// server derives it from a class basename, so the shape is stable but the
+	// namespace it came from is not part of the contract.
+	Type *string `json:"type"`
+
+	// The already-translated sentence the web shows this same user. It is the
+	// only thing taken out of the row's `data`, and it can be null.
+	Message *string `json:"message"`
+
+	Read      bool    `json:"read"`
+	ReadAt    *string `json:"read_at"`
+	CreatedAt *string `json:"created_at"`
+}
+
+type NotificationPage struct {
+	Notifications []Notification
+	Meta          PageMeta
+}
+
+// NotificationFilters are the query parameters the notifications listing takes.
+type NotificationFilters struct {
+	// Read is forwarded verbatim rather than modelled as a bool, because the
+	// server's parameter is a tri-state: absent or "false" is unread only,
+	// "true" is read only, "all" is both. Same shape as ProjectFilters.Archived
+	// and a pointer for the same reason — "not given" and "given empty" are
+	// different requests, and the server owns the message for the second.
+	Read *string
+
+	// SortOrder is "asc" or "desc" over created_at. There is no sort_by: a
+	// notification has no name to sort by and no status that outranks its
+	// arrival time, so the server offers only the one ordering and a flip.
+	// Pointer for the same reason as Read.
+	SortOrder *string
+
+	// Pointer: see DealFilters.Limit.
+	Limit *int
+}
+
+func (f NotificationFilters) query() url.Values {
+	q := url.Values{}
+	if f.Read != nil {
+		q.Set("read", *f.Read)
+	}
+	if f.SortOrder != nil {
+		q.Set("sort_order", *f.SortOrder)
+	}
+	if f.Limit != nil {
+		q.Set("per_page", strconv.Itoa(*f.Limit))
+	}
+	return q
+}
+
+func (c *Client) Notifications(ctx context.Context, filters NotificationFilters) (*NotificationPage, error) {
+	var envelope struct {
+		Data []Notification `json:"data"`
+		Meta PageMeta       `json:"meta"`
+	}
+	if err := c.get(ctx, c.notificationsPath(filters), &envelope); err != nil {
+		return nil, err
+	}
+	return &NotificationPage{Notifications: envelope.Data, Meta: envelope.Meta}, nil
+}
+
+func (c *Client) NotificationsRaw(ctx context.Context, filters NotificationFilters) (json.RawMessage, error) {
+	var raw json.RawMessage
+	if err := c.get(ctx, c.notificationsPath(filters), &raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+
+func (c *Client) Notification(ctx context.Context, id string) (*Notification, error) {
+	var envelope struct {
+		Data Notification `json:"data"`
+	}
+	if err := c.get(ctx, c.notificationPath(id), &envelope); err != nil {
+		return nil, err
+	}
+	return &envelope.Data, nil
+}
+
+func (c *Client) NotificationRaw(ctx context.Context, id string) (json.RawMessage, error) {
+	var raw json.RawMessage
+	if err := c.get(ctx, c.notificationPath(id), &raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+
+// notificationsPath carries no team, unlike every other listing here. A
+// notification is addressed to a user and `notifications` has no team column at
+// all, so the caller is the whole scope — the shape /me already has.
+func (c *Client) notificationsPath(filters NotificationFilters) string {
+	path := "/api/v1/notifications"
+	if q := filters.query(); len(q) > 0 {
+		path += "?" + q.Encode()
+	}
+	return path
+}
+
+// notificationPath escapes the id rather than validating it, for the reason
+// projectPath gives. One difference worth knowing: this endpoint answers 404
+// and never 403, deliberately, because a notification belongs to exactly one
+// user and a 403 would only confirm that somebody else's row has that id.
+func (c *Client) notificationPath(id string) string {
+	return "/api/v1/notifications/" + url.PathEscape(id)
+}
+
 func (c *Client) get(ctx context.Context, path string, into any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {

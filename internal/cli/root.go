@@ -103,6 +103,7 @@ a tool that quietly assumes production is one typo away from trouble.`,
 	root.AddCommand(
 		commands.NewAuthCmd(deps),
 		commands.NewMeCmd(deps),
+		commands.NewNotificationsCmd(deps),
 		commands.NewProjectsCmd(deps),
 		commands.NewDealsCmd(deps),
 		commands.NewContractsCmd(deps),
