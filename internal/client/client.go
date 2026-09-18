@@ -426,11 +426,16 @@ type Project struct {
 	Brand *struct {
 		Name string `json:"name"`
 	} `json:"brand"`
-	Archived    bool    `json:"archived"`
-	Type        *string `json:"type"`
-	NDARequired bool    `json:"nda_required"`
-	CreatedAt   *string `json:"created_at"`
-	UpdatedAt   *string `json:"updated_at"`
+	Archived bool    `json:"archived"`
+	Type     *string `json:"type"`
+	// Whether talent must clear the outreach gate — usually an NDA, but the
+	// platform no longer presumes it — before campaign details are disclosed.
+	// Renamed from `nda_required` by basa-web PR #424; a plain bool because the
+	// API always emits it, and a known false has to render "no" rather than the
+	// em dash that stands for absent data.
+	OutreachGateRequired bool    `json:"outreach_gate_required"`
+	CreatedAt            *string `json:"created_at"`
+	UpdatedAt            *string `json:"updated_at"`
 }
 
 type ProjectPage struct {
