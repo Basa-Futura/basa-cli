@@ -184,10 +184,10 @@ A project is one campaign: a brand, a set of roles, and the deals run under it.
 ```
 $ basa projects list -e staging --archived all
 staging · Acme Agency
-ID                                    NAME             BRAND              TYPE       NDA  ARCHIVED  UPDATED
-9f2c0001-2222-3333-4444-555566667701  Autumn Launch    Northwind Trading  social     yes  no        2026-08-19
-9f2c0002-2222-3333-4444-555566667702  Spring Campaign  Acme               social     no   no        2026-08-17
-9f2c0003-2222-3333-4444-555566667703  Holiday Push     Glow & Co          affiliate  no   yes       2026-06-02
+ID                                    NAME             BRAND              TYPE       GATE  ARCHIVED  UPDATED
+9f2c0001-2222-3333-4444-555566667701  Autumn Launch    Northwind Trading  social     yes   no        2026-08-19
+9f2c0002-2222-3333-4444-555566667702  Spring Campaign  Acme               social     no    no        2026-08-17
+9f2c0003-2222-3333-4444-555566667703  Holiday Push     Glow & Co          affiliate  no    yes       2026-06-02
 ```
 
 **Archived projects are hidden unless you ask**, the same way the Basa web app hides them. The
@@ -202,8 +202,8 @@ ID                                    NAME             BRAND              TYPE  
 
 Columns that would say the same thing on every row are said once in the heading instead — so a page
 that is all one brand loses the **BRAND** column and names the brand above the table, and the
-**ARCHIVED** column appears only when a page actually holds both. **NDA** is whether the campaign
-gates outreach behind an NDA.
+**ARCHIVED** column appears only when a page actually holds both. **GATE** is whether the campaign
+gates outreach behind a required agreement, most often an NDA.
 
 ```bash
 basa projects list -e staging --archived all

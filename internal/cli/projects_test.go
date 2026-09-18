@@ -22,11 +22,11 @@ const (
 const projectsBody = `{"data":[
   {"id":"` + autumnID + `","name":"Autumn Launch",
    "external_name":"Autumn with Northwind","brand":{"name":"Northwind Trading"},
-   "archived":false,"type":"social","nda_required":true,
+   "archived":false,"type":"social","outreach_gate_required":true,
    "created_at":"2026-08-01T12:00:00+00:00","updated_at":"2026-08-19T09:30:00+00:00"},
   {"id":"` + springID + `","name":"Spring Campaign",
    "external_name":null,"brand":{"name":"Acme"},
-   "archived":false,"type":"social","nda_required":false,
+   "archived":false,"type":"social","outreach_gate_required":false,
    "created_at":"2026-07-01T12:00:00+00:00","updated_at":"2026-08-17T09:30:00+00:00"}
 ],"meta":{"current_page":1,"last_page":1,"per_page":25,"total":2}}`
 
@@ -60,7 +60,7 @@ func TestProjectsListRendersATable(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d, want 0. stderr:\n%s", code, stderr)
 	}
-	for _, want := range []string{"ID", "NAME", "BRAND", "TYPE", "NDA", "UPDATED",
+	for _, want := range []string{"ID", "NAME", "BRAND", "TYPE", "GATE", "UPDATED",
 		"Autumn Launch", "Northwind Trading", "social", "2026-08-19"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("table is missing %q\n--- stdout ---\n%s", want, stdout)
@@ -84,8 +84,8 @@ func TestProjectsListShowsTheFullUUID(t *testing.T) {
 	}
 }
 
-// nda_required false is a known answer, not missing data, so it must read as
-// "no" rather than the em dash an absent field gets.
+// outreach_gate_required false is a known answer, not missing data, so it must
+// read as "no" rather than the em dash an absent field gets.
 func TestProjectsListRendersFalseAsNoNotADash(t *testing.T) {
 	h := newHarness(t, projectsAPI(meWith("Acme Agency"), projectsBody, nil))
 	t.Setenv(config.EnvVarToken, "42|token")
@@ -99,10 +99,10 @@ func TestProjectsListRendersFalseAsNoNotADash(t *testing.T) {
 	// else in the table.
 	autumn, spring := rowFor(t, stdout, autumnID), rowFor(t, stdout, springID)
 	if !strings.Contains(autumn, "yes") {
-		t.Errorf("nda_required true should read yes, row was:\n%s", autumn)
+		t.Errorf("outreach_gate_required true should read yes, row was:\n%s", autumn)
 	}
 	if !strings.Contains(spring, "no") {
-		t.Errorf("nda_required false should read no, not a dash, row was:\n%s", spring)
+		t.Errorf("outreach_gate_required false should read no, not a dash, row was:\n%s", spring)
 	}
 	if strings.Contains(spring, "—") {
 		t.Errorf("a known false must not render as an em dash, row was:\n%s", spring)
@@ -164,8 +164,8 @@ func TestProjectsListHidesTheArchivedColumnWhenAllAreActive(t *testing.T) {
 }
 
 func TestProjectsListShowsTheArchivedColumnWhenThePageIsMixed(t *testing.T) {
-	mixed := strings.Replace(projectsBody, `"archived":false,"type":"social","nda_required":false`,
-		`"archived":true,"type":"social","nda_required":false`, 1)
+	mixed := strings.Replace(projectsBody, `"archived":false,"type":"social","outreach_gate_required":false`,
+		`"archived":true,"type":"social","outreach_gate_required":false`, 1)
 	h := newHarness(t, projectsAPI(meWith("Acme Agency"), mixed, nil))
 	t.Setenv(config.EnvVarToken, "42|token")
 
@@ -329,9 +329,9 @@ func TestProjectsListJSONEmitsTheAPIShape(t *testing.T) {
 
 	var payload struct {
 		Data []struct {
-			ID           string  `json:"id"`
-			ExternalName *string `json:"external_name"`
-			NDARequired  bool    `json:"nda_required"`
+			ID                   string  `json:"id"`
+			ExternalName         *string `json:"external_name"`
+			OutreachGateRequired bool    `json:"outreach_gate_required"`
 		} `json:"data"`
 		Meta struct {
 			Total int `json:"total"`
@@ -404,7 +404,7 @@ func TestProjectsListWarnsWhenTruncated(t *testing.T) {
 func TestProjectsShowRendersARecord(t *testing.T) {
 	single := `{"data":{"id":"` + autumnID + `","name":"Autumn Launch",
 	  "external_name":"Autumn with Northwind","brand":{"name":"Northwind Trading"},
-	  "archived":false,"type":"social","nda_required":true,
+	  "archived":false,"type":"social","outreach_gate_required":true,
 	  "created_at":"2026-08-01T12:00:00+00:00","updated_at":"2026-08-19T09:30:00+00:00"}}`
 
 	h := newHarness(t, projectsAPI(meWith("Acme Agency"), single, nil))
@@ -416,7 +416,7 @@ func TestProjectsShowRendersARecord(t *testing.T) {
 		t.Fatalf("exit %d, want 0. stderr:\n%s", code, stderr)
 	}
 	for _, want := range []string{"Project", autumnID, "Autumn Launch", "Autumn with Northwind",
-		"Northwind Trading", "NDA required", "2026-08-01"} {
+		"Northwind Trading", "Outreach gate required", "2026-08-01"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("record is missing %q\n--- stdout ---\n%s", want, stdout)
 		}
@@ -431,7 +431,7 @@ func TestProjectsShowRendersARecord(t *testing.T) {
 func TestProjectsShowSaysNotSetForAnAbsentExternalName(t *testing.T) {
 	single := `{"data":{"id":"` + springID + `","name":"Spring Campaign",
 	  "external_name":null,"brand":null,"archived":false,"type":null,
-	  "nda_required":false,"created_at":null,"updated_at":null}}`
+	  "outreach_gate_required":false,"created_at":null,"updated_at":null}}`
 
 	h := newHarness(t, projectsAPI(meWith("Acme Agency"), single, nil))
 	t.Setenv(config.EnvVarToken, "42|token")

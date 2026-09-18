@@ -124,7 +124,7 @@ func runProjectsList(ctx context.Context, deps *Deps, filters client.ProjectFilt
 	if !oneBrand {
 		headers = append(headers, "BRAND")
 	}
-	headers = append(headers, "TYPE", "NDA")
+	headers = append(headers, "TYPE", "GATE")
 	// Only when the page actually holds both. Active is the default listing, so
 	// a column reading "no" on every row would be noise; a page that is
 	// uniformly archived says so in the heading above.
@@ -139,7 +139,7 @@ func runProjectsList(ctx context.Context, deps *Deps, filters client.ProjectFilt
 		if !oneBrand {
 			row = append(row, projectBrand(project))
 		}
-		row = append(row, derefOr(project.Type, "—"), yesNo(project.NDARequired))
+		row = append(row, derefOr(project.Type, "—"), yesNo(project.OutreachGateRequired))
 		if mixedArchived {
 			row = append(row, yesNo(project.Archived))
 		}
@@ -214,7 +214,7 @@ func runProjectsShow(ctx context.Context, deps *Deps, id string) error {
 			{Key: "Name talent sees", Value: derefOr(project.ExternalName, "not set")},
 			{Key: "Brand", Value: projectBrand(*project)},
 			{Key: "Type", Value: derefOr(project.Type, "—")},
-			{Key: "NDA required", Value: yesNo(project.NDARequired)},
+			{Key: "Outreach gate required", Value: yesNo(project.OutreachGateRequired)},
 			{Key: "Archived", Value: yesNo(project.Archived)},
 			{Key: "Created", Value: shortDate(project.CreatedAt)},
 			{Key: "Updated", Value: shortDate(project.UpdatedAt)},
