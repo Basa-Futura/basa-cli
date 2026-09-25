@@ -225,11 +225,16 @@ func refuseArgsWithoutEchoing() cobra.PositionalArgs {
 // CLI's knowledge of that flow: there is no callback, no code to exchange, and
 // nothing here to talk to over HTTP.
 //
+// The server renamed the route from /cli/pair with no alias, so a binary built
+// before this change sends operators to a 404. Nothing else in the CLI knows
+// the path: the config stores only the base URL, and a token minted under the
+// old name keeps working, because the API it is used against did not move.
+//
 // No ?scope= is sent. The parameter exists, but an absent scope means "no
 // preference" and the server then grants its own vocabulary — which is the
 // answer we want, and one fewer thing to keep in step with it.
 func pairURL(baseURL string) string {
-	return strings.TrimRight(baseURL, "/") + "/cli/pair"
+	return strings.TrimRight(baseURL, "/") + "/auth/authorize"
 }
 
 // stdinIsTerminal is the one interactivity test in this package. The prompt and

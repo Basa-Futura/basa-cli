@@ -539,7 +539,7 @@ func TestLoginPrintsThePairingURLBeforeAskingForAToken(t *testing.T) {
 	if code == 0 {
 		t.Fatal("login with no token must not exit 0")
 	}
-	if want := h.server.URL + "/cli/pair"; !strings.Contains(stderr, want) {
+	if want := h.server.URL + "/auth/authorize"; !strings.Contains(stderr, want) {
 		t.Errorf("should print %q, got:\n%s", want, stderr)
 	}
 }
@@ -645,7 +645,7 @@ func TestBareLoginTargetsBuiltInProduction(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("exit %d, want 1", code)
 	}
-	if !strings.Contains(stderr, config.ProductionURL+"/cli/pair") {
+	if !strings.Contains(stderr, config.ProductionURL+"/auth/authorize") {
 		t.Errorf("should offer the built-in production pairing URL, got:\n%s", stderr)
 	}
 	if !strings.Contains(stderr, config.EnvProduction) {

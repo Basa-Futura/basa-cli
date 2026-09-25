@@ -13,14 +13,14 @@ import (
 
 func TestPairURL(t *testing.T) {
 	cases := map[string]string{
-		"https://staging.basa.example":  "https://staging.basa.example/cli/pair",
-		"https://staging.basa.example/": "https://staging.basa.example/cli/pair",
+		"https://staging.basa.example":  "https://staging.basa.example/auth/authorize",
+		"https://staging.basa.example/": "https://staging.basa.example/auth/authorize",
 		// Trailing slashes are already stripped by config.SetEnvironment; this
 		// only proves the join does not add a second one if that ever changes.
-		"https://staging.basa.example///": "https://staging.basa.example/cli/pair",
+		"https://staging.basa.example///": "https://staging.basa.example/auth/authorize",
 		// An environment served under a path prefix keeps it.
-		"http://127.0.0.1:8002":     "http://127.0.0.1:8002/cli/pair",
-		"https://example.test/basa": "https://example.test/basa/cli/pair",
+		"http://127.0.0.1:8002":     "http://127.0.0.1:8002/auth/authorize",
+		"https://example.test/basa": "https://example.test/basa/auth/authorize",
 	}
 
 	for base, want := range cases {
@@ -85,20 +85,20 @@ func TestNormalizeToken(t *testing.T) {
 // pages, so anything but http/https is refused and the printed URL carries it.
 func TestIsBrowsable(t *testing.T) {
 	cases := map[string]bool{
-		"https://staging.basa.example/cli/pair": true,
-		"http://127.0.0.1:8002/cli/pair":        true,
-		"HTTPS://staging.basa.example/cli/pair": true, // url.Parse lowercases the scheme
+		"https://staging.basa.example/auth/authorize": true,
+		"http://127.0.0.1:8002/auth/authorize":        true,
+		"HTTPS://staging.basa.example/auth/authorize": true, // url.Parse lowercases the scheme
 
 		// Would make `open` act on the filesystem.
-		"/etc/passwd/cli/pair":          false,
-		"file:///etc/passwd/cli/pair":   false,
-		"staging.basa.example/cli/pair": false, // no scheme: a relative path
-		"/Applications/Calculator.app":  false,
+		"/etc/passwd/auth/authorize":          false,
+		"file:///etc/passwd/auth/authorize":   false,
+		"staging.basa.example/auth/authorize": false, // no scheme: a relative path
+		"/Applications/Calculator.app":        false,
 
 		// Would invoke whatever registered the scheme.
-		"myapp://open/cli/pair": false,
-		"javascript:alert(1)":   false,
-		"ssh://host/cli/pair":   false,
+		"myapp://open/auth/authorize": false,
+		"javascript:alert(1)":         false,
+		"ssh://host/auth/authorize":   false,
 
 		// Nothing to open.
 		"":             false,
