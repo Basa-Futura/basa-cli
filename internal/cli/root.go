@@ -15,6 +15,7 @@ import (
 	"github.com/Basa-Futura/basa-cli/internal/fail"
 	"github.com/Basa-Futura/basa-cli/internal/licenses"
 	"github.com/Basa-Futura/basa-cli/internal/output"
+	"github.com/Basa-Futura/basa-cli/internal/update"
 )
 
 // Stamped at build time via -ldflags.
@@ -32,6 +33,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		asJSON   bool
 		envFlag  string
 		teamFlag string
+		check    *update.Checker
 	)
 
 	out := output.New(stdout, stderr, false)
@@ -79,6 +81,11 @@ a tool that quietly assumes production is one typo away from trouble.`,
 		deps.EnvFlag = envFlag
 		deps.TeamFlag = teamFlag
 
+		// Here rather than before dispatch because only now is the command
+		// known, and some commands never check. Any check it starts runs in
+		// another process, and nothing waits for it.
+		check = startUpdateCheck(cmd, stderr)
+
 		// Configuration is read here, once a command is actually about to run,
 		// not before dispatch. Commands that never read it say so with an
 		// annotation where they are defined. That keeps a malformed config.json
@@ -107,6 +114,8 @@ a tool that quietly assumes production is one typo away from trouble.`,
 		commands.NewProjectsCmd(deps),
 		commands.NewDealsCmd(deps),
 		commands.NewContractsCmd(deps),
+		newUpdateCmd(out),
+		newUpdateCheckCmd(),
 		newVersionCmd(stdout),
 		newLicensesCmd(stdout),
 	)
@@ -115,7 +124,13 @@ a tool that quietly assumes production is one typo away from trouble.`,
 	root.SetErr(stderr)
 	root.SetArgs(args)
 
-	if err := root.ExecuteContext(context.Background()); err != nil {
+	err := root.ExecuteContext(context.Background())
+
+	// After the command's own output, success or failure, so the notice is the
+	// last thing on stderr rather than interleaved with a table or an error.
+	defer printUpdateNotice(check, stderr)
+
+	if err != nil {
 		// Cobra validates positional arguments before PersistentPreRun fires, so
 		// an Args error arrives here with out.JSON still at its default even
 		// though --json was already parsed. Sync it from the flag, or JSON mode

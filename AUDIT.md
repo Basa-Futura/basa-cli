@@ -84,6 +84,15 @@ strings basa | grep -oE 'https?://[a-zA-Z0-9./-]{6,}' | sort -u
 # two cobra issue links, and staging.basa.example
 ```
 
+> **Since this audit (2026-09-28): there is now an update check, and a second destination.**
+> `basa update`, and a background check about once a day, read
+> `https://github.com/Basa-Futura/basa-cli/releases`, the same public release the installer reads.
+> Every request is a `GET`, and none carries a token or any operator data. The check does not run
+> when stderr is not a terminal, when `CI` is set, or when `BASA_NO_UPDATE_CHECK` is set; see the
+> README's "Updating". The source sweep above now also matches `internal/update/release.go`
+> (github.com) and, from before this change, `internal/config/config.go` (the built-in production
+> address). The findings below describe the commit audited, not this note.
+
 ### No secrets, in the tree or anywhere in history
 
 All six commits were searched, not just the checkout:

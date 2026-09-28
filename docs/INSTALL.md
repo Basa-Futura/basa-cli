@@ -35,6 +35,20 @@ This is the same approach the Basecamp CLI uses (`curl -fsSL https://basecamp.co
 | `BASA_INSTALL_DIR` | Where to put the binary (default `~/.local/bin`) |
 | `BASA_VERSION` | Install a specific version instead of the latest |
 
+### Upgrading
+
+```bash
+basa update
+```
+
+It reads the same release the installer does and applies the same checksum check, then swaps the new
+binary in atomically. Re-running the installer also works, and is the way past versions up to v0.1.7,
+which have no `update` command.
+
+basa checks for a new release about once a day, in a background process, and says so on stderr. It
+checks only when a person is reading stderr: never in a pipe, never with `CI` set, and never with
+`BASA_NO_UPDATE_CHECK` set. See the README's "Updating" section.
+
 ---
 
 ## Why the repository is public
@@ -77,8 +91,9 @@ git push origin v0.1.0
 ```
 
 `.github/workflows/release.yml` runs `make check`, cross-compiles for macOS and Linux on arm64 and
-amd64, and attaches the binaries plus `checksums.txt` to the GitHub release. The installer reads that
-release. Asset names in the workflow and in `scripts/install.sh` have to stay in step.
+amd64, and attaches the binaries plus `checksums.txt` to the GitHub release. The installer and
+`basa update` both read that release. Asset names in the workflow, in `scripts/install.sh`, and in
+`internal/update` have to stay in step.
 
 **Limit of the checksum check.** `checksums.txt` is published in the same release as the binary, so it
 proves the download was not corrupted or altered in transit — not that the release itself is genuine.

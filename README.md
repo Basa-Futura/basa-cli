@@ -49,9 +49,12 @@ basa version          # check it worked
 ```
 
 > **This works because the repository is public and publishes releases** — the installer
-> authenticates with nothing, which is what makes it one line. Re-running it is also how you
-> upgrade: it overwrites the binary in place, and there is deliberately no self-update. See
+> authenticates with nothing, which is what makes it one line. See
 > [docs/INSTALL.md](docs/INSTALL.md) for the from-source path and the reasoning.
+
+To upgrade later, run `basa update`. basa also tells you when a new release is out — see
+[Updating](#updating). (Versions up to v0.1.7 have no `update`; re-run the installer once to get past
+them.)
 
 ### 3. Log in
 
@@ -366,6 +369,34 @@ reason about from a script, and a loop that backs off invisibly hides the fact t
 throttled at all. In `--json` mode the wait is in `error.hint` on stdout, so a script can read it and
 decide for itself.
 
+## Updating
+
+```bash
+basa update
+```
+
+It downloads the latest release for your platform, checks it against the release's published
+checksums, and swaps it in for the one you are running. The swap is atomic: if anything fails partway,
+the basa you already have is left exactly as it was. It needs permission to write where basa is
+installed, which for the default `~/.local/bin` you already have.
+
+**basa tells you when there is something to update.** About once a day it checks GitHub for a new
+release, and when there is one it says so on stderr after your command's output:
+
+```
+A new version of basa is available: v0.1.9 (you have v0.1.8).
+Run: basa update
+```
+
+The check never slows a command down. It runs in a separate background process that nothing waits for,
+so a release shows up from the command after the one that found it. It sends nothing but a request
+for the release page. Your token never goes to GitHub, and neither does anything about you or your
+data. It stays quiet whenever a person is not reading: when stderr is piped or redirected, when `CI` is
+set, or when you set `BASA_NO_UPDATE_CHECK=1`.
+
+A build from source reports a version like `v0.1.8-3-gabc1234`, which is not a release, so it never
+checks and `basa update` asks for `--force` before replacing it.
+
 ## Sessions and security
 
 **Sessions are short — currently 8 hours**, so you will log in roughly twice a day. That is deliberate:
@@ -388,6 +419,7 @@ never logged.
 | `BASA_ENV` | The environment to use, instead of `--env` |
 | `BASA_TOKEN` | Use this token and ignore stored credentials entirely. This is what scripts and CI use |
 | `BASA_NO_KEYRING` | Set to anything to force file storage instead of the keychain |
+| `BASA_NO_UPDATE_CHECK` | Set to anything to stop basa checking for new releases |
 | `XDG_CONFIG_HOME` | Move the config directory off `~/.config` |
 
 ---
