@@ -663,6 +663,117 @@ func (c *Client) notificationPath(id string) string {
 	return "/api/v1/notifications/" + url.PathEscape(id)
 }
 
+// --- search ----------------------------------------------------------------
+
+// SearchTypes are the hit types this CLI can follow up on, each with its own
+// `show` command. The search command sends exactly these unless told
+// otherwise: the server's contract asks a client to name the types it renders,
+// so a type added to the server later never reaches a CLI that has no command
+// for it.
+var SearchTypes = []string{"project", "deal", "contract"}
+
+// SearchHit is one result of GET /api/v1/search.
+//
+// Type, ID and Team together are a reference, the same triple a notification
+// subject carries: ID is what `basa <type>s show` takes, and Team is the team
+// it has to be shown under. Title and Subtitle are what the server decided the
+// row is called, already redacted for this caller; a subtitle that would
+// repeat the title arrives as null.
+type SearchHit struct {
+	Type     string  `json:"type"`
+	ID       string  `json:"id"`
+	Team     int64   `json:"team"`
+	Title    string  `json:"title"`
+	Subtitle *string `json:"subtitle"`
+	// Status is the same object the type's own endpoint publishes, a deal's
+	// computed status or a contract's, and null for a live project.
+	Status *struct {
+		Slug  string `json:"slug"`
+		Label string `json:"label"`
+	} `json:"status"`
+}
+
+// SearchMeta is the usual page envelope plus what only search reports.
+type SearchMeta struct {
+	PageMeta
+
+	// Counts has one entry per requested type, summing to Total. A type that
+	// was not requested is absent, not zero: zero means searched and nothing
+	// found.
+	Counts map[string]int `json:"counts"`
+
+	// Teams are the team ids actually searched. It can be shorter than what
+	// was asked for — a team id the caller cannot read is dropped by the
+	// server rather than refused — and empty means nothing was searchable.
+	Teams []int64 `json:"teams"`
+}
+
+type SearchPage struct {
+	Hits []SearchHit
+	Meta SearchMeta
+}
+
+// SearchFilters are the query parameters GET /api/v1/search takes. None of
+// them is validated here: the server owns the rules (2–255 characters, known
+// types, 1–50 per page) and its 422 says which was broken.
+type SearchFilters struct {
+	Term string
+
+	// Types is sent as a comma list whenever it is non-nil, including empty —
+	// see NotificationFilters.Read for why "given empty" is not dropped.
+	Types []string
+
+	// Team narrows the search to one team. Nil is every team the caller reads.
+	Team *int64
+
+	// Pointers: see DealFilters.Limit.
+	Limit *int
+	Page  *int
+}
+
+func (f SearchFilters) query() url.Values {
+	q := url.Values{}
+	q.Set("q", f.Term)
+	if f.Types != nil {
+		q.Set("type", strings.Join(f.Types, ","))
+	}
+	if f.Team != nil {
+		q.Set("team", strconv.FormatInt(*f.Team, 10))
+	}
+	if f.Limit != nil {
+		q.Set("per_page", strconv.Itoa(*f.Limit))
+	}
+	if f.Page != nil {
+		q.Set("page", strconv.Itoa(*f.Page))
+	}
+	return q
+}
+
+func (c *Client) Search(ctx context.Context, filters SearchFilters) (*SearchPage, error) {
+	var envelope struct {
+		Data []SearchHit `json:"data"`
+		Meta SearchMeta  `json:"meta"`
+	}
+	if err := c.get(ctx, c.searchPath(filters), &envelope); err != nil {
+		return nil, err
+	}
+	return &SearchPage{Hits: envelope.Data, Meta: envelope.Meta}, nil
+}
+
+func (c *Client) SearchRaw(ctx context.Context, filters SearchFilters) (json.RawMessage, error) {
+	var raw json.RawMessage
+	if err := c.get(ctx, c.searchPath(filters), &raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+
+// searchPath sits outside /teams/{team}, beside /notifications, because one
+// search spans every team the caller reads; `team` narrows it as a parameter.
+func (c *Client) searchPath(filters SearchFilters) string {
+	return "/api/v1/search?" + filters.query().Encode()
+}
+
 func (c *Client) get(ctx context.Context, path string, into any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
@@ -739,6 +850,15 @@ func (c *Client) statusError(status int, header http.Header, body []byte) error 
 			msg = "The request was rejected as invalid."
 		}
 		return fail.Usage(msg)
+
+	case http.StatusServiceUnavailable:
+		// Unlike the other 5xx, a 503 is often something the operator can act
+		// on, by waiting: search answers one when its query times out, and says
+		// so. When the server explains itself, that beats "report it". A bare
+		// 503 — a proxy, maintenance mode — still gets the generic answer.
+		if msg, _ := apiMessage(body); msg != "" {
+			return fail.UsageHint(msg, "Wait a moment and try again.")
+		}
 	}
 
 	if status >= 500 {

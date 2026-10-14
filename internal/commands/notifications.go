@@ -43,7 +43,8 @@ personally, so unlike every other listing here there is no team to choose and
 
 The feed says what happened, not what it happened to: the API publishes the
 message text and no deal, contract or project id, so there is nothing to pass
-to basa deals show. Read the sentence and search for the deal by name.`,
+to basa deals show. Read the sentence and search for the deal by name:
+basa search <name>.`,
 		Example: `  basa notifications list
   basa notifications list --read all
   basa notifications list --read all --limit 50 --sort-order asc

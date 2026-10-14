@@ -364,6 +364,11 @@ func resolveTeam(ctx context.Context, deps *Deps, c *client.Client) (client.Team
 		return client.Team{}, err
 	}
 
+	return teamFrom(me, deps)
+}
+
+// teamFrom is resolveTeam for a caller that already holds /me.
+func teamFrom(me *client.Me, deps *Deps) (client.Team, error) {
 	if len(me.Teams) == 0 {
 		return client.Team{}, fail.UsageHint(
 			"Your account is not a member of any team.",
