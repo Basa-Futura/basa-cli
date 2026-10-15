@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -19,9 +20,14 @@ import (
 // The id column is what makes this tight — a project's is a 36-character
 // UUID — and it has to stay, because it is what `show` takes. --json carries
 // every value whole.
+//
+// When no row has a subtitle the column is dropped and the title takes its
+// room. Staging showed why that matters: contract titles there run to 57
+// characters, and the part that tells two apart ("… - AMMENDMENT") is the end.
 const (
-	searchTitleWidth    = 40
-	searchSubtitleWidth = 32
+	searchTitleWidth     = 40
+	searchSubtitleWidth  = 32
+	searchTitleWidthWide = searchTitleWidth + searchSubtitleWidth
 )
 
 // NewSearchCmd builds `basa search`.
@@ -145,11 +151,16 @@ func runSearch(ctx context.Context, deps *Deps, filters client.SearchFilters) er
 	oneTeam, uniformTeam := uniformSearchTeam(page.Hits)
 
 	summary := searchTally(page.Meta)
-	if uniformTeam && len(page.Meta.Teams) > 1 && len(page.Hits) == page.Meta.Total {
+	if uniformTeam && len(page.Meta.Teams) > 1 {
 		// The TEAM column is dropped below when every row would repeat it, so
-		// say it here instead — but only once all the hits are on screen, or
-		// "all in" would be a claim about rows nobody fetched.
-		summary += " · all in " + teamName(oneTeam)
+		// the team is said here instead, or it would be said nowhere. "All in"
+		// only once every hit is on screen; otherwise it is a claim about rows
+		// nobody fetched, and the honest scope is this page.
+		if len(page.Hits) == page.Meta.Total {
+			summary += " · all in " + teamName(oneTeam)
+		} else {
+			summary += " · this page in " + teamName(oneTeam)
+		}
 	}
 	deps.Out.Notice("%s", summary)
 
@@ -161,6 +172,12 @@ func runSearch(ctx context.Context, deps *Deps, filters client.SearchFilters) er
 
 	showType := !uniformSearchType(page.Hits)
 	showTeam := !uniformTeam
+	showSubtitle := anySubtitle(page.Hits)
+
+	titleWidth := searchTitleWidth
+	if !showSubtitle {
+		titleWidth = searchTitleWidthWide
+	}
 
 	var headers []string
 	if showType {
@@ -170,7 +187,11 @@ func runSearch(ctx context.Context, deps *Deps, filters client.SearchFilters) er
 	if showTeam {
 		headers = append(headers, "TEAM")
 	}
-	headers = append(headers, "TITLE", "SUBTITLE", "STATUS")
+	headers = append(headers, "TITLE")
+	if showSubtitle {
+		headers = append(headers, "SUBTITLE")
+	}
+	headers = append(headers, "STATUS")
 
 	rows := make([][]string, 0, len(page.Hits))
 	for _, hit := range page.Hits {
@@ -182,11 +203,11 @@ func runSearch(ctx context.Context, deps *Deps, filters client.SearchFilters) er
 		if showTeam {
 			row = append(row, teamName(hit.Team))
 		}
-		rows = append(rows, append(row,
-			truncate(hit.Title, searchTitleWidth),
-			truncate(derefOr(hit.Subtitle, "—"), searchSubtitleWidth),
-			searchStatus(hit),
-		))
+		row = append(row, truncate(hit.Title, titleWidth))
+		if showSubtitle {
+			row = append(row, truncate(derefOr(hit.Subtitle, "—"), searchSubtitleWidth))
+		}
+		rows = append(rows, append(row, searchStatus(hit)))
 	}
 
 	if err := deps.Out.Data(nil, func(io.Writer) error {
@@ -212,13 +233,27 @@ func runSearch(ctx context.Context, deps *Deps, filters client.SearchFilters) er
 	return nil
 }
 
-// searchError rewords the one error search can raise that the rest of the CLI
-// would get wrong. The search contract has no 404: an empty search is a 200,
-// and a team you cannot read is dropped rather than refused. So a 404 here
-// means the route itself is missing — a server from before search — and "that
-// does not exist, or you cannot see it" would send the operator hunting for an
-// id they never typed.
+// searchError rewords the two errors where search knows better than the rest
+// of the CLI.
+//
+// A 404: the search contract has none — an empty search is a 200, and a team
+// you cannot read is dropped rather than refused. So a 404 means the route
+// itself is missing, a server from before search, and "that does not exist, or
+// you cannot see it" would send the operator hunting for an id they never typed.
+//
+// A 504: the search was too slow. On staging (2026-10-15) a search of every
+// type over every team hit the server's statement timeout, and the API's own
+// 503 reached the CLI as an HTML 504 from the hosting platform
+// (x-do-orig-status: 503). The same term with --team or --type answered in
+// under a second. Asking for less is what the operator can do, so the hint
+// says that before "try again".
 func searchError(err error, env string) error {
+	if errors.Is(err, fail.ErrGatewayTimeout) {
+		return fail.UsageHint(
+			fmt.Sprintf("The %s environment took too long to search all of that (504).", env),
+			"Ask for less: narrow it with --team or --type, or use a longer term.",
+		)
+	}
 	if fail.CodeOf(err) != fail.CodeNotFound {
 		return err
 	}
@@ -325,6 +360,17 @@ func uniformSearchTeam(hits []client.SearchHit) (int64, bool) {
 		}
 	}
 	return hits[0].Team, true
+}
+
+// anySubtitle reports whether any row on the page has a subtitle. A column of
+// nothing but dashes says nothing, and costs the title its room.
+func anySubtitle(hits []client.SearchHit) bool {
+	for _, h := range hits {
+		if h.Subtitle != nil && *h.Subtitle != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // searchStatus is the hit's status label. A live project has none, and an

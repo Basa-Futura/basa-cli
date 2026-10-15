@@ -859,6 +859,11 @@ func (c *Client) statusError(status int, header http.Header, body []byte) error 
 		if msg, _ := apiMessage(body); msg != "" {
 			return fail.UsageHint(msg, "Wait a moment and try again.")
 		}
+
+	case http.StatusGatewayTimeout:
+		// Answered by the edge, not the API — the body is an HTML page — so
+		// there is no message to relay, only the fact that it was slow.
+		return fail.GatewayTimeout(c.env)
 	}
 
 	if status >= 500 {

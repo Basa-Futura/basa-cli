@@ -353,3 +353,81 @@ func TestSearchTeamMustBeOneOfYours(t *testing.T) {
 		t.Errorf("searched %d times for an unknown team, want 0", call.searchHits)
 	}
 }
+
+// Staging's real shape (2026-10-15): contract titles that differ only at the
+// end, no recipient so every subtitle is null, and a page of one team out of
+// several searched with more beyond it. The dash-only SUBTITLE column goes and
+// the title takes its room, and the team is named for this page — "all in"
+// would claim rows that were not fetched.
+func TestSearchOnAPageWithoutSubtitlesOrAllItsHits(t *testing.T) {
+	body := `{"data":[
+	  {"type":"contract","id":"ZTRMU","team":8,"title":"BASA Influencer Campaign - Creator Agreement - AMMENDMENT",
+	   "subtitle":null,"status":{"slug":"ready_for_signature","label":"Ready for Signature"}},
+	  {"type":"contract","id":"eba6l","team":8,"title":"BASA Influencer Campaign - Creator Agreement",
+	   "subtitle":null,"status":{"slug":"signed","label":"Signed"}}
+	],"meta":{"current_page":1,"last_page":29,"per_page":2,"total":57,
+	  "counts":{"contract":57},"teams":[7,8]}}`
+	h, _ := searchHarness(t, twoTeams, http.StatusOK, body)
+
+	stdout, stderr, code := h.run("search", "basa", "--env", "local", "--type", "contract")
+
+	if code != 0 {
+		t.Fatalf("exit %d, stderr:\n%s", code, stderr)
+	}
+	wantOut := "" +
+		"ID     TITLE                                                      STATUS\n" +
+		"ZTRMU  BASA Influencer Campaign - Creator Agreement - AMMENDMENT  Ready for Signature\n" +
+		"eba6l  BASA Influencer Campaign - Creator Agreement               Signed\n"
+	if stdout != wantOut {
+		t.Errorf("stdout:\n%s\nwant:\n%s\nstderr:\n%s", stdout, wantOut, stderr)
+	}
+	if want := "57 hits · 57 contracts · this page in Northwind\n"; !strings.Contains(stderr, want) {
+		t.Errorf("stderr:\n%s\nwant it to contain %q", stderr, want)
+	}
+}
+
+// Staging's hosting platform turns the API's slow-search 503 into an HTML 504.
+// Narrowing is what fixes it, so search says that, not "report it".
+func TestSearchTooSlowSaysToAskForLess(t *testing.T) {
+	h, _ := searchHarness(t, twoTeams, http.StatusGatewayTimeout, `<!DOCTYPE html><html><body>Error code: 503</body></html>`)
+
+	stdout, stderr, code := h.run("search", "basa", "--env", "local")
+
+	if code != 1 {
+		t.Errorf("exit %d, want 1", code)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want nothing", stdout)
+	}
+	want := "The local environment took too long to search all of that (504).\n" +
+		"Ask for less: narrow it with --team or --type, or use a longer term.\n"
+	if stderr != want {
+		t.Errorf("stderr = %q, want %q", stderr, want)
+	}
+}
+
+// Every other command gets the general 504: worth another try, not first a
+// thing to report.
+func TestAGatewayTimeoutElsewhereSaysTryAgain(t *testing.T) {
+	h := newHarness(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/api/v1/me") {
+			_, _ = w.Write([]byte(meWith("Acme Agency")))
+			return
+		}
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusGatewayTimeout)
+		_, _ = w.Write([]byte(`<html>Error code: 503</html>`))
+	})
+	t.Setenv(config.EnvVarToken, "42|token")
+
+	_, stderr, code := h.run("deals", "list", "--env", "local")
+
+	if code != 1 {
+		t.Errorf("exit %d, want 1", code)
+	}
+	want := "The local environment took too long to answer (504).\n" +
+		"Try again in a moment. If it keeps happening, report it with the time it happened.\n"
+	if stderr != want {
+		t.Errorf("stderr = %q, want %q", stderr, want)
+	}
+}
