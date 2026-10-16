@@ -180,6 +180,9 @@ basa deals list -e staging --team acme          # a unique fragment is enough
 A fragment matching two of your teams is an error, not a coin flip. The team in use is printed above
 every result, so you can always see which one you are looking at.
 
+`basa search` is the exception: it covers all your teams unless `--team` narrows it, and names the
+team on every result (see [Search](#search)).
+
 ### Projects
 
 A project is one campaign: a brand, a set of roles, and the deals run under it.
@@ -306,12 +309,56 @@ both carry the whole thing.
 
 **The feed says what happened, not what it happened to.** The API publishes the message text and no
 deal, contract or project id, so there is nothing here to paste into `basa deals show`. Read the
-sentence and look the deal up by name. This is a known gap rather than an oversight — linking a
+sentence and look the deal up by name with [`basa search`](#search). This is a known gap rather than an oversight — linking a
 notification back to its subject is a disclosure decision, because a notification outlives your
 access to what it is about.
 
 **A `READ` column appears only when a page holds both** read and unread rows. Under the default
 filter every row is unread, so the column would repeat itself on every line.
+
+### Search
+
+One search across projects, deals and contracts, in every team you belong to:
+
+```
+$ basa search acme -e staging
+staging · "acme" · Acme Agency, Northwind
+87 hits · 3 projects · 72 deals · 12 contracts
+TYPE      ID                                    TEAM         TITLE                       SUBTITLE            STATUS
+project   0199c4e2-6f0b-7a51-9d3e-1c2b3a4d5e6f  Acme Agency  Acme Spring Launch          Acme Beverages      —
+deal      K3mQz                                 Acme Agency  Dana Reed                   Acme Spring Launch  Outreach Sent
+contract  Xq7Lp                                 Northwind    Acme Partnership Agreement  —                   Ready for Signature
+Showing 1–3 of 87. Next: --page 2. Or narrow it with --type or --team.
+Show one: basa projects show 0199c4e2-6f0b-7a51-9d3e-1c2b3a4d5e6f --env staging --team 7
+```
+
+Several words are one term, so `basa search dana reed` needs no quotes.
+
+| Flag | Effect |
+|---|---|
+| `--type` | Only these: `project`, `deal`, `contract` (comma-separated, or repeat the flag) |
+| `--team`, `-t` | Only this team, matched the way every other command matches it |
+| `--limit`, `-n` | How many per page, 1–50 (default 25) |
+| `--page` | Which page |
+
+What to know:
+
+**It matches names you can see, as a plain substring.** A term of at least two characters matches a
+project or its brand, a deal's counterparty, project, brand or role, and a contract or its recipient,
+ignoring case. `%` and `_` are ordinary characters. A deal found by its brand or role shows a title
+that does not contain your term; that is the match, not a mistake.
+
+**Best matches first.** An exact title, then a title that starts with the term, then the rest, most
+recently updated first. The order is the server's and is stable from page to page.
+
+**Each row names its team,** because the same name can exist in two of them, and the `Show one:` line
+is the command to open the first result, ready to copy.
+
+**Its own rate limit.** Search allows 30 a minute, on top of the 60 every request shares. If the server
+times a search out, `basa` says to try again rather than to report it.
+
+`--json` returns the server's payload untouched: `meta.counts` per type and `meta.teams`, the team ids
+that were actually searched.
 
 ### A note on ids
 

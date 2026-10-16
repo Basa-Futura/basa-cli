@@ -201,6 +201,25 @@ func ServerError(env string, status int) *Error {
 	}
 }
 
+// ErrGatewayTimeout is the cause carried by GatewayTimeout, so a command that
+// can do something about a slow request (search can ask for less) can tell it
+// apart from other failures with errors.Is.
+var ErrGatewayTimeout = errors.New("gateway timeout")
+
+// GatewayTimeout is a 504: something in front of the API gave up on it, or —
+// as staging's hosting platform does — replaced the API's own 503 with its
+// error page. Unlike other server errors it is usually worth one more try,
+// and often a sign the request asked for a lot, so it does not say "report
+// it" first.
+func GatewayTimeout(env string) *Error {
+	return &Error{
+		Code:  CodeUsage,
+		Msg:   fmt.Sprintf("The %s environment took too long to answer (504).", env),
+		Hint:  "Try again in a moment. If it keeps happening, report it with the time it happened.",
+		cause: ErrGatewayTimeout,
+	}
+}
+
 func Wrap(code int, msg string, cause error) *Error {
 	return &Error{Code: code, Msg: msg, cause: cause}
 }
