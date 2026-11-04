@@ -107,6 +107,9 @@ Run `basa` on its own at any time to see the available commands.
 | `basa deals show <id>` | Where one deal stands |
 | `basa contracts list` | What is awaiting signature |
 | `basa contracts show <id>` | Where one contract stands |
+| `basa contacts list` | Who is in our talent network |
+| `basa contacts show <id>` | One contact's details, socials and our notes |
+| `basa search <term>` | Where is that project, deal or contract, by name |
 | `basa notifications list` | What is new for me |
 | `basa notifications show <id>` | The full text of one notification |
 | `basa me` | Who am I, what teams can I see, when does my token expire |
@@ -277,6 +280,51 @@ EfhxL  Ready for Signature  Spring Campaign agreement  Sam Rivera  VqXmZ  2026-0
 
 A contract in the **DEAL** column reading `standalone` is not missing data — it is a contract created
 without a deal attached, which is a normal shape.
+
+### Contacts
+
+The team's contacts: the web's **Talent Network**.
+
+```
+$ basa contacts list -e staging
+staging · Acme Agency
+ID                                    NAME        EMAIL            PLATFORMS                     TAGS                           UPDATED
+9f3c2a4e-0d51-4b7e-9a6b-2f1c8e7d5a10  Ana Souza   ana@example.com  instagram 48.2K, tiktok 1.3M  Region: LATAM, Tier: Priority  2026-10-21
+9f3c2a4e-0d51-4b7e-9a6b-2f1c8e7d5a11  Sam Rivera  —                —                             —                              2026-10-20
+Showing 1–2 of 30. Next: --page 2. Or narrow it with --search or --project.
+```
+
+| Flag | Effect |
+|---|---|
+| `--search` | Only those whose name or email contains this |
+| `--project` | Only those with a deal on this project (an id from `basa projects list`) |
+| `--sort-by` | `name` (the default), `email` or `updated_at` |
+| `--sort-order` | `asc` (the default) or `desc` |
+| `--limit`, `-n` | How many per page, 1–100 (default 25) |
+| `--page` | Which page |
+
+`basa contacts show <id>` adds every platform in full (handle, followers, engagement) and your team's
+notes.
+
+What to know:
+
+**Your team's view of each person.** If your team renamed a contact or gave them another email, that
+is what you see, and what `--search` matches; their account name no longer finds them. Another team's
+notes, tags or overrides on the same person never appear.
+
+**The id is your team's contact, not the person.** The same seller is a different contact on every
+team that knows them, so an id from one team means nothing under another. That is also why `show`
+answers "does not exist" for another team's contact, even one you can see there.
+
+**`--project` goes through deals.** It finds people with a deal on that project that you are allowed
+to see, so an empty result can mean "no deals you can see", not "nobody". The heading names the
+project to remind you.
+
+**Not here on purpose:** phone numbers, photos, rates and deal history. Rates and history are deal
+data, and live under `basa deals`.
+
+In the table, followers are rounded (`48.2K`) and the platform marked preferred comes first.
+Engagement is a whole percent (`3.1%`), shown exactly as the web shows it.
 
 ### Notifications
 
