@@ -539,6 +539,153 @@ func (c *Client) projectPath(teamID int64, id string) string {
 	return fmt.Sprintf("/api/v1/teams/%d/projects/%s", teamID, url.PathEscape(id))
 }
 
+// --- contacts --------------------------------------------------------------
+
+// Contact is one entry in a team's contact list — the web's Talent Network —
+// shown the way THIS team sees the seller: the name, email, socials, tags and
+// notes are this team's, never another buyer's view of the same person.
+//
+// What is absent is absent on purpose: phone, photo, rates and deal history
+// are not published (rates and history are deal data, and belong to /deals).
+type Contact struct {
+	// The contacts row, not the seller: a seller is a contact of many teams,
+	// and this id names the row that belongs to this one. It is what
+	// `contacts show` takes, and it means nothing under another team.
+	ID string `json:"id"`
+
+	// This team's override when it set one, else the seller account's. Null
+	// only when neither has a value.
+	Name  *string `json:"name"`
+	Email *string `json:"email"`
+
+	// In the order the team stored them; empty when it keeps none.
+	Platforms []ContactPlatform `json:"platforms"`
+
+	// This team's tags only, ordered by type then name. Names, not ids.
+	Tags []struct {
+		Type *string `json:"type"`
+		Name string  `json:"name"`
+	} `json:"tags"`
+
+	UpdatedAt *string `json:"updated_at"`
+
+	// Notes is this team's free-text note. Only `show` sends it; on a listing
+	// it is always nil, which is not the same as "no notes".
+	Notes *string `json:"notes"`
+}
+
+type ContactPlatform struct {
+	// The canonical platform key ("instagram"), or the key as stored when it
+	// is not one the server recognises.
+	Platform  string  `json:"platform"`
+	Handle    *string `json:"handle"`
+	Followers *int64  `json:"followers"`
+	// A string because the team types it in. By convention it is a whole
+	// percent ("3.1" means 3.1%), and the web shows it with a % appended.
+	EngagementRate *string `json:"engagement_rate"`
+	Preferred      bool    `json:"preferred"`
+}
+
+type ContactPage struct {
+	Contacts []Contact
+	Meta     PageMeta
+}
+
+// ContactFilters are the query parameters the contacts listing takes. As
+// everywhere else, nothing is validated here; the server's 422 names the
+// problem.
+type ContactFilters struct {
+	// Search and Project are plain strings, sent only when non-empty — see
+	// ProjectFilters.Search.
+	Search  string
+	Project string
+
+	// Pointers: sent whenever the flag was typed, even empty, so the server
+	// answers an invalid value instead of it being dropped. See
+	// NotificationFilters.Read.
+	SortBy    *string
+	SortOrder *string
+	Limit     *int
+	Page      *int
+}
+
+func (f ContactFilters) query() url.Values {
+	q := url.Values{}
+	if f.Search != "" {
+		q.Set("search", f.Search)
+	}
+	if f.Project != "" {
+		q.Set("project", f.Project)
+	}
+	if f.SortBy != nil {
+		q.Set("sort_by", *f.SortBy)
+	}
+	if f.SortOrder != nil {
+		q.Set("sort_order", *f.SortOrder)
+	}
+	if f.Limit != nil {
+		q.Set("per_page", strconv.Itoa(*f.Limit))
+	}
+	if f.Page != nil {
+		q.Set("page", strconv.Itoa(*f.Page))
+	}
+	return q
+}
+
+func (c *Client) Contacts(ctx context.Context, teamID int64, filters ContactFilters) (*ContactPage, error) {
+	var envelope struct {
+		Data []Contact `json:"data"`
+		Meta PageMeta  `json:"meta"`
+	}
+	if err := c.get(ctx, c.contactsPath(teamID, filters), &envelope); err != nil {
+		return nil, err
+	}
+	return &ContactPage{Contacts: envelope.Data, Meta: envelope.Meta}, nil
+}
+
+func (c *Client) ContactsRaw(ctx context.Context, teamID int64, filters ContactFilters) (json.RawMessage, error) {
+	var raw json.RawMessage
+	if err := c.get(ctx, c.contactsPath(teamID, filters), &raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+
+func (c *Client) Contact(ctx context.Context, teamID int64, id string) (*Contact, error) {
+	var envelope struct {
+		Data Contact `json:"data"`
+	}
+	if err := c.get(ctx, c.contactPath(teamID, id), &envelope); err != nil {
+		return nil, err
+	}
+	return &envelope.Data, nil
+}
+
+func (c *Client) ContactRaw(ctx context.Context, teamID int64, id string) (json.RawMessage, error) {
+	var raw json.RawMessage
+	if err := c.get(ctx, c.contactPath(teamID, id), &raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+
+func (c *Client) contactsPath(teamID int64, filters ContactFilters) string {
+	path := fmt.Sprintf("/api/v1/teams/%d/contacts", teamID)
+	if q := filters.query(); len(q) > 0 {
+		path += "?" + q.Encode()
+	}
+	return path
+}
+
+// contactPath escapes the id rather than validating it, as projectPath does.
+// Note the refusals run the other way round from projects: the server checks
+// the path team first, so another team's contact, a made-up id and garbage are
+// all the same 404, and a 403 only ever means a contact on THIS team that you
+// are refused.
+func (c *Client) contactPath(teamID int64, id string) string {
+	return fmt.Sprintf("/api/v1/teams/%d/contacts/%s", teamID, url.PathEscape(id))
+}
+
 // --- notifications ---------------------------------------------------------
 
 // Notification is one entry in the caller's own feed.
