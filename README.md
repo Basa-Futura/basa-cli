@@ -251,13 +251,22 @@ when you want the answer a colleague sees in the browser.
 |---|---|
 | `--stage` | `outreach`, `negotiation`, `contracting`, `execution` |
 | `--project` | Only this project (a project id) |
+| `--contact` | Only deals with this contact (an id from `basa contacts list`) |
 | `--limit`, `-n` | How many to show, 1–100 (default 25) |
 | `--all` | Every page, not just the first. Cannot be combined with `--limit` |
 
 ```bash
 basa deals list -e staging --stage contracting
+basa deals list -e staging --contact 9f3c2a4e-0d51-4b7e-9a6b-2f1c8e7d5a10
 basa deals show EfhxL -e staging
 ```
+
+**One person's deals** is `--contact`. Every row is then the same person, so their name moves into the
+heading (`staging · Acme Agency · with Ana Souza`) and the COUNTERPARTY column goes. That's unless your team
+renamed them on one deal: then the column stays and the heading names the contact id. The filter needs
+access to your team's contacts; without it the server refuses and `basa` exits `4`. `basa deals show` prints the
+deal's **Contact** id, so you can go from a deal to `basa contacts show` and back. It reads "not
+available" when the person isn't one of your team's contacts, or you can't see the team's contacts.
 
 If more deals match than are shown, it says so — a partial list is never left looking complete — and
 `--all` fetches the rest, walking every page at the server's largest page size.
@@ -321,7 +330,7 @@ to see, so an empty result can mean "no deals you can see", not "nobody". The he
 project to remind you.
 
 **Not here on purpose:** phone numbers, photos, rates and deal history. Rates and history are deal
-data, and live under `basa deals`.
+data, and live under `basa deals`: `basa deals list --contact <id>` lists one person's deals.
 
 In the table, followers are rounded (`48.2K`) and the platform marked preferred comes first.
 Engagement is a whole percent (`3.1%`), shown exactly as the web shows it.

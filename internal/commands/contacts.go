@@ -38,8 +38,9 @@ matches. Another team's notes, tags or overrides on the same person never
 appear.
 
 Phone numbers, rates and deal history are not here on purpose: rates and
-history are deal data, and live under basa deals. To find who is on a
-campaign, filter by project: basa contacts list --project <project id>.`,
+history are deal data, and live under basa deals — one person's deals are
+basa deals list --contact <contact id>. To find who is on a campaign, filter
+by project: basa contacts list --project <project id>.`,
 		Example: `  basa contacts list --env staging
   basa contacts list --env staging --search ana
   basa contacts list --env staging --project 9f2c1111-2222-3333-4444-555566667777

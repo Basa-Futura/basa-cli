@@ -28,6 +28,7 @@ A deal is one creator on one campaign. "Outstanding" usually means filtering by
 stage — outreach, negotiation, contracting, or execution.`,
 		Example: `  basa deals list --env staging
   basa deals list --env staging --stage contracting
+  basa deals list --env staging --contact 9f3c2a4e-0d51-4b7e-9a6b-2f1c8e7d5a10
   basa deals show K3mQz --env staging`,
 	}
 
@@ -40,6 +41,7 @@ func newDealsListCmd(deps *Deps) *cobra.Command {
 	var (
 		stage   string
 		project string
+		contact string
 		limit   int
 		all     bool
 	)
@@ -49,7 +51,7 @@ func newDealsListCmd(deps *Deps) *cobra.Command {
 		Short: "List the team's deals",
 		Args:  rejectStrayArgs("deals list", "deals show <id>"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			filters := client.DealFilters{Stage: stage, Project: project}
+			filters := client.DealFilters{Stage: stage, Project: project, Contact: contact}
 			// Whether --limit was typed at all, not whether its value is
 			// non-zero. `--limit 0` must reach the server so its 1-100 message
 			// answers it, instead of being folded into the default page size
@@ -64,6 +66,7 @@ func newDealsListCmd(deps *Deps) *cobra.Command {
 
 	cmd.Flags().StringVar(&stage, "stage", "", "Only this stage (outreach, negotiation, contracting, execution)")
 	cmd.Flags().StringVar(&project, "project", "", "Only this project (a project id)")
+	cmd.Flags().StringVar(&contact, "contact", "", "Only deals with this contact (an id from basa contacts list)")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "How many to show (1-100, default 25)")
 	cmd.Flags().BoolVar(&all, "all", false, "Every page, not just the first (cannot be combined with --limit)")
 
@@ -121,6 +124,21 @@ func runDealsList(ctx context.Context, deps *Deps, filters client.DealFilters, a
 			heading += " (" + brand + ")"
 		}
 	}
+
+	// Under --contact every row is the same person, so the COUNTERPARTY column
+	// would repeat itself; the name moves up here instead. Only when every row
+	// agrees on it, though: a team can rename the counterparty on one deal,
+	// and a heading that picked one of two names would hide the other. Then
+	// the column stays and the heading names the filter by its id.
+	counterparty, oneCounterparty := "", false
+	if filters.Contact != "" {
+		counterparty, oneCounterparty = uniformCounterparty(page.Deals)
+		if oneCounterparty {
+			heading += " · with " + counterparty
+		} else {
+			heading += " · contact " + filters.Contact
+		}
+	}
 	deps.Out.Notice("%s", heading)
 
 	if len(page.Deals) == 0 {
@@ -138,7 +156,10 @@ func runDealsList(ctx context.Context, deps *Deps, filters client.DealFilters, a
 	if !oneProject {
 		headers = append(headers, "PROJECT", "BRAND")
 	}
-	headers = append(headers, "COUNTERPARTY", "ROLE", "ASSIGNED", "UPDATED")
+	if !oneCounterparty {
+		headers = append(headers, "COUNTERPARTY")
+	}
+	headers = append(headers, "ROLE", "ASSIGNED", "UPDATED")
 
 	rows := make([][]string, 0, len(page.Deals))
 	for _, g := range groups {
@@ -147,8 +168,10 @@ func runDealsList(ctx context.Context, deps *Deps, filters client.DealFilters, a
 			if !oneProject {
 				row = append(row, dealProject(deal), dealBrand(deal))
 			}
+			if !oneCounterparty {
+				row = append(row, dealCounterparty(deal))
+			}
 			rows = append(rows, append(row,
-				dealCounterparty(deal),
 				valueOr(deal.Role != nil, func() string { return deal.Role.Name }),
 				derefOr(deal.AssignedTo, "—"),
 				shortDate(deal.UpdatedAt),
@@ -194,6 +217,21 @@ func uniformProject(deals []client.Deal) (project, brand string, ok bool) {
 		brand = ""
 	}
 	return project, brand, true
+}
+
+// uniformCounterparty reports the counterparty name every deal shows, when they
+// all show the same non-empty one.
+func uniformCounterparty(deals []client.Deal) (string, bool) {
+	if len(deals) == 0 || deals[0].Counterparty == nil || deals[0].Counterparty.Name == "" {
+		return "", false
+	}
+	name := deals[0].Counterparty.Name
+	for _, d := range deals[1:] {
+		if d.Counterparty == nil || d.Counterparty.Name != name {
+			return "", false
+		}
+	}
+	return name, true
 }
 
 // statusGroup is the deals sharing one status label, and when any of them was
@@ -322,6 +360,11 @@ func runDealsShow(ctx context.Context, deps *Deps, id string) error {
 			{Key: "Brand", Value: dealBrand(*deal)},
 			{Key: "Role", Value: valueOr(deal.Role != nil, func() string { return deal.Role.Name })},
 			{Key: "Counterparty", Value: dealCounterparty(*deal)},
+			// What `contacts show` and `deals list --contact` take. Null means
+			// the creator is not one of the team's contacts, or you cannot see
+			// the team's contacts — the server does not say which, so neither
+			// does this.
+			{Key: "Contact", Value: dealContactID(*deal)},
 			{Key: "Assigned to", Value: derefOr(deal.AssignedTo, "nobody")},
 			{Key: "Sent", Value: shortDate(deal.SentAt)},
 			{Key: "Updated", Value: shortDate(deal.UpdatedAt)},
@@ -488,6 +531,16 @@ func dealCounterparty(d client.Deal) string {
 		return "—"
 	}
 	return d.Counterparty.Name
+}
+
+func dealContactID(d client.Deal) string {
+	if d.Counterparty == nil {
+		return "—"
+	}
+	if d.Counterparty.ContactID == nil || *d.Counterparty.ContactID == "" {
+		return "not available"
+	}
+	return *d.Counterparty.ContactID
 }
 
 // shortDate trims an ISO-8601 timestamp to the date. A COO scanning a list
