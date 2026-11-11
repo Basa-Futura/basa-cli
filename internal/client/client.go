@@ -115,6 +115,10 @@ type Deal struct {
 	} `json:"role"`
 	Counterparty *struct {
 		Name string `json:"name"`
+		// The creator's contact id on this team: what `contacts show` and
+		// `deals list --contact` take. Null when the creator is not one of the
+		// team's contacts, or the caller cannot see the team's contacts.
+		ContactID *string `json:"contact_id"`
 	} `json:"counterparty"`
 	AssignedTo *string `json:"assigned_to"`
 	SentAt     *string `json:"sent_at"`
@@ -139,6 +143,11 @@ type PageMeta struct {
 type DealFilters struct {
 	Stage   string
 	Project string
+	// Contact is a contact id from `contacts list`, or a deal's
+	// counterparty.contact_id, in either UUID form. Forwarded as typed: the
+	// server answers an id that is not one of the team's contacts with a 422,
+	// and a caller without access to the team's contacts with a 403.
+	Contact string
 	// Limit is a POINTER so that "the flag was not given" and "the flag was
 	// given the value 0" stay distinguishable. They are not the same request:
 	// omitting it means "let the server choose", while `--limit 0` is an
@@ -158,6 +167,9 @@ func (f DealFilters) query() url.Values {
 	}
 	if f.Project != "" {
 		q.Set("project", f.Project)
+	}
+	if f.Contact != "" {
+		q.Set("contact", f.Contact)
 	}
 	if f.Page > 0 {
 		q.Set("page", strconv.Itoa(f.Page))
